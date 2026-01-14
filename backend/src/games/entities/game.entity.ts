@@ -60,6 +60,9 @@ export class Game {
   @Column({ name: 'night_end_hour', type: 'int', default: 6 })
   nightEndHour: number;
 
+  @Column({ name: 'center_point', type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
+  centerPoint: any;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

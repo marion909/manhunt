@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Game } from './entities/game.entity';
@@ -7,6 +7,7 @@ import { GameBoundary } from './entities/game-boundary.entity';
 import { CreateGameDto } from './dto/create-game.dto';
 import { UpdateGameDto } from './dto/update-game.dto';
 import { GameStatus, Role } from '../common/enums';
+import { CaptureCodeService } from '../captures/capture-code.service';
 
 @Injectable()
 export class GamesService {
@@ -17,6 +18,7 @@ export class GamesService {
     private participantsRepository: Repository<GameParticipant>,
     @InjectRepository(GameBoundary)
     private boundariesRepository: Repository<GameBoundary>,
+    private captureCodeService: CaptureCodeService,
   ) {}
 
   async create(createGameDto: CreateGameDto, creatorId: string): Promise<Game> {
@@ -30,11 +32,19 @@ export class GamesService {
     });
     await this.gamesRepository.save(game);
 
+    // Get next participant number
+    const maxParticipantNumber = await this.participantsRepository
+      .createQueryBuilder('participant')
+      .select('MAX(participant.participantNumber)', 'max')
+      .getRawOne();
+    const nextNumber = (maxParticipantNumber?.max || 0) + 1;
+
     // Add creator as ORGA
     const participant = this.participantsRepository.create({
       gameId: game.id,
       userId: creatorId,
       role: Role.ORGA,
+      participantNumber: nextNumber,
     });
     await this.participantsRepository.save(participant);
 
@@ -123,10 +133,128 @@ export class GamesService {
     return participant?.role || null;
   }
 
+  async getParticipantRole(gameId: string, participantId: string): Promise<Role | null> {
+    console.log('getParticipantRole called with:', { gameId, participantId });
+    const participant = await this.participantsRepository.findOne({
+      where: { gameId, id: participantId },
+    });
+    console.log('Found participant:', participant);
+    return participant?.role || null;
+  }
+
+  async getParticipantById(participantId: string): Promise<GameParticipant | null> {
+    return this.participantsRepository.findOne({
+      where: { id: participantId },
+      relations: ['game'],
+    });
+  }
+
+  async findParticipantByUserId(gameId: string, userId: string): Promise<GameParticipant | null> {
+    return this.participantsRepository.findOne({
+      where: { gameId, userId },
+      relations: ['user'],
+    });
+  }
+
+  async getGameParticipants(gameId: string): Promise<GameParticipant[]> {
+    return this.participantsRepository.find({
+      where: { gameId },
+      relations: ['user'],
+      order: { role: 'ASC', joinedAt: 'ASC' },
+    });
+  }
+
   async findActiveGames(): Promise<Game[]> {
     return this.gamesRepository.find({
       where: { status: GameStatus.ACTIVE },
       relations: ['participants'],
     });
+  }
+
+  async startGame(id: string, userId: string): Promise<Game> {
+    const game = await this.findOne(id, userId);
+
+    // Check if user is ORGA
+    const participant = game.participants.find((p) => p.userId === userId);
+    if (participant?.role !== Role.ORGA) {
+      throw new ForbiddenException('Only ORGA can start game');
+    }
+
+    if (game.status !== GameStatus.DRAFT && game.status !== GameStatus.PENDING) {
+      throw new ForbiddenException('Game must be in DRAFT or PENDING status to start');
+    }
+
+    game.status = GameStatus.ACTIVE;
+    game.startTime = new Date();
+    await this.gamesRepository.save(game);
+
+    // Generate TOTP secrets for all PLAYER participants
+    const players = await this.participantsRepository.find({
+      where: { gameId: id, role: Role.PLAYER },
+    });
+
+    for (const player of players) {
+      if (!player.captureSecret) {
+        player.captureSecret = this.captureCodeService.generateSecret();
+        await this.participantsRepository.save(player);
+      }
+    }
+
+    return this.findOne(id, userId);
+  }
+
+  async pauseGame(id: string, userId: string): Promise<Game> {
+    const game = await this.findOne(id, userId);
+
+    const participant = game.participants.find((p) => p.userId === userId);
+    if (participant?.role !== Role.ORGA && participant?.role !== Role.OPERATOR) {
+      throw new ForbiddenException('Only ORGA or OPERATOR can pause game');
+    }
+
+    if (game.status !== GameStatus.ACTIVE) {
+      throw new ForbiddenException('Can only pause ACTIVE games');
+    }
+
+    game.status = GameStatus.PAUSED;
+    await this.gamesRepository.save(game);
+
+    return this.findOne(id, userId);
+  }
+
+  async resumeGame(id: string, userId: string): Promise<Game> {
+    const game = await this.findOne(id, userId);
+
+    const participant = game.participants.find((p) => p.userId === userId);
+    if (participant?.role !== Role.ORGA && participant?.role !== Role.OPERATOR) {
+      throw new ForbiddenException('Only ORGA or OPERATOR can resume game');
+    }
+
+    if (game.status !== GameStatus.PAUSED) {
+      throw new ForbiddenException('Can only resume PAUSED games');
+    }
+
+    game.status = GameStatus.ACTIVE;
+    await this.gamesRepository.save(game);
+
+    return this.findOne(id, userId);
+  }
+
+  async finishGame(id: string, userId: string): Promise<Game> {
+    const game = await this.findOne(id, userId);
+
+    const participant = game.participants.find((p) => p.userId === userId);
+    if (participant?.role !== Role.ORGA) {
+      throw new ForbiddenException('Only ORGA can finish game');
+    }
+
+    if (game.status !== GameStatus.ACTIVE && game.status !== GameStatus.PAUSED) {
+      throw new ForbiddenException('Can only finish ACTIVE or PAUSED games');
+    }
+
+    game.status = GameStatus.FINISHED;
+    game.endTime = new Date();
+    await this.gamesRepository.save(game);
+
+    return this.findOne(id, userId);
   }
 }

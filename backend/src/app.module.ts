@@ -11,6 +11,8 @@ import { InvitationsModule } from './invitations/invitations.module';
 import { GeospatialModule } from './geospatial/geospatial.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { EventsModule } from './events/events.module';
+import { RulesModule } from './rules/rules.module';
+import { CapturesModule } from './captures/captures.module';
 import { User } from './users/entities/user.entity';
 import { Game } from './games/entities/game.entity';
 import { GameParticipant } from './games/entities/game-participant.entity';
@@ -19,6 +21,8 @@ import { Position } from './tracking/entities/position.entity';
 import { Ping } from './tracking/entities/ping.entity';
 import { Event } from './events/entities/event.entity';
 import { Invitation } from './invitations/entities/invitation.entity';
+import { GameRule } from './rules/entities/game-rule.entity';
+import { Capture } from './captures/entities/capture.entity';
 
 @Module({
   imports: [
@@ -47,6 +51,8 @@ import { Invitation } from './invitations/entities/invitation.entity';
           Ping,
           Event,
           Invitation,
+          GameRule,
+          Capture,
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
@@ -85,6 +91,8 @@ import { Invitation } from './invitations/entities/invitation.entity';
     InvitationsModule,
     TrackingModule,
     EventsModule,
+    RulesModule,
+    CapturesModule,
   ],
   controllers: [],
   providers: [],

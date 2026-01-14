@@ -18,10 +18,13 @@ export enum EventType {
   BOUNDARY_VIOLATION = 'boundary_violation',
   SPEED_VIOLATION = 'speed_violation',
   GPS_SPOOFING_DETECTED = 'gps_spoofing_detected',
+  RULE_VIOLATION = 'rule_violation',
 
   // Admin events
   DISQUALIFICATION = 'disqualification',
   MANUAL_INTERVENTION = 'manual_intervention',
+  POSITION_OVERRIDE = 'position_override',
+  STATUS_OVERRIDE = 'status_override',
 
   // Emergency events
   PANIC_BUTTON = 'panic_button',

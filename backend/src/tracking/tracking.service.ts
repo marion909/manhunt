@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, MoreThan } from 'typeorm';
 import { Position } from './entities/position.entity';
 import { Ping } from './entities/ping.entity';
 import { PositionUpdateDto } from './dto/position-update.dto';
 import { GeospatialService } from '../geospatial/geospatial.service';
 import { GamesService } from '../games/games.service';
+import { EventsService } from '../events/events.service';
 import { Role } from '../common/enums';
+import { EventType } from '../common/enums/event-type.enum';
 import { Point } from 'geojson';
 
 @Injectable()
@@ -18,11 +20,12 @@ export class TrackingService {
     private pingsRepository: Repository<Ping>,
     private geospatialService: GeospatialService,
     private gamesService: GamesService,
+    private eventsService: EventsService,
   ) {}
 
   async savePosition(
     gameId: string,
-    userId: string,
+    participantId: string,
     positionDto: PositionUpdateDto,
   ): Promise<Position> {
     const point: Point = {
@@ -32,7 +35,7 @@ export class TrackingService {
 
     const position = this.positionsRepository.create({
       gameId,
-      userId,
+      participantId,
       location: point,
       accuracy: positionDto.accuracy,
       altitude: positionDto.altitude,
@@ -45,43 +48,70 @@ export class TrackingService {
     return this.positionsRepository.save(position);
   }
 
-  async getLatestPosition(gameId: string, userId: string): Promise<Position | null> {
+  async getLatestPosition(gameId: string, participantId: string): Promise<Position | null> {
     return this.positionsRepository.findOne({
-      where: { gameId, userId },
+      where: { gameId, participantId },
       order: { timestamp: 'DESC' },
     });
   }
 
-  async getHunterPositions(gameId: string): Promise<Position[]> {
-    // Get all hunters in game
-    const game = await this.gamesService.findOne(gameId, gameId); // Temp workaround
-    const hunters = game.participants.filter((p) => p.role === Role.HUNTER);
+  async getHunterPositions(gameId: string): Promise<any[]> {
+    // Get all latest positions for the game with participant role info
+    const result = await this.positionsRepository.query(`
+      SELECT DISTINCT ON (p."participant_id")
+        p.id,
+        p.game_id as "gameId",
+        p.participant_id as "participantId",
+        ST_AsGeoJSON(p.location)::json as location,
+        p.accuracy,
+        p.altitude,
+        p.speed,
+        p.heading,
+        p.timestamp,
+        p.is_emergency as "isEmergency",
+        gp.role,
+        gp.display_name as "displayName",
+        gp.participant_number as "participantNumber"
+      FROM positions p
+      LEFT JOIN game_participants gp ON gp.id = p.participant_id
+      WHERE p.game_id = $1
+      ORDER BY p.participant_id ASC, p.timestamp DESC
+    `, [gameId]);
 
-    // Get latest position for each hunter
-    const positions = await Promise.all(
-      hunters.map((hunter) => this.getLatestPosition(gameId, hunter.userId)),
-    );
-
-    return positions.filter((p) => p !== null);
+    return result.map((row: any) => ({
+      id: row.id,
+      gameId: row.gameId,
+      participantId: row.participantId,
+      location: row.location,
+      accuracy: row.accuracy,
+      altitude: row.altitude,
+      speed: row.speed,
+      heading: row.heading,
+      timestamp: row.timestamp,
+      isEmergency: row.isEmergency,
+      role: row.role || 'HUNTER',
+      displayName: row.displayName || `Participant #${row.participantNumber || '?'}`,
+      participantNumber: row.participantNumber,
+    }));
   }
 
   async getPlayerPings(gameId: string): Promise<Ping[]> {
-    // Get pings from last 24 hours
+    // Get pings from last 24 hours (regardless of reveal status for debugging)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     return this.pingsRepository.find({
       where: {
         gameId,
-        revealedAt: LessThan(new Date()),
-        timestamp: LessThan(oneDayAgo),
+        timestamp: MoreThan(oneDayAgo),
       },
+      relations: ['participant'],
       order: { timestamp: 'DESC' },
     });
   }
 
-  async generatePing(gameId: string, playerId: string): Promise<Ping> {
+  async generatePing(gameId: string, participantId: string): Promise<Ping> {
     // Get player's current position
-    const position = await this.getLatestPosition(gameId, playerId);
+    const position = await this.getLatestPosition(gameId, participantId);
     if (!position) {
       throw new Error('No position available for player');
     }
@@ -97,7 +127,7 @@ export class TrackingService {
 
     const ping = this.pingsRepository.create({
       gameId,
-      playerId,
+      participantId,
       actualLocation: actualPoint,
       revealedLocation: revealedPoint,
       radiusMeters: 200,
@@ -105,7 +135,13 @@ export class TrackingService {
       revealedAt: revealTime,
     });
 
-    return this.pingsRepository.save(ping);
+    const savedPing = await this.pingsRepository.save(ping);
+    
+    // Reload with participant relation for proper display name
+    return this.pingsRepository.findOne({
+      where: { id: savedPing.id },
+      relations: ['participant'],
+    });
   }
 
   async checkBoundaryViolation(gameId: string, userId: string): Promise<boolean> {
@@ -117,13 +153,144 @@ export class TrackingService {
 
   async getPositionHistory(
     gameId: string,
-    userId: string,
+    participantId: string,
     limit: number = 100,
   ): Promise<Position[]> {
     return this.positionsRepository.find({
-      where: { gameId, userId },
+      where: { gameId, participantId },
       order: { timestamp: 'DESC' },
       take: limit,
     });
+  }
+
+  async triggerPanic(gameId: string, userId: string, location: Point) {
+    // Verify user is a player in this game
+    const game = await this.gamesService.findOne(gameId, userId);
+    const participant = game.participants.find((p) => p.userId === userId);
+
+    if (!participant || participant.role !== Role.PLAYER) {
+      throw new ForbiddenException('Only players can trigger panic alerts');
+    }
+
+    // Save panic position
+    const panicPosition = this.positionsRepository.create({
+      gameId,
+      participantId: userId,
+      location,
+      timestamp: new Date(),
+      isEmergency: true,
+    });
+    await this.positionsRepository.save(panicPosition);
+
+    // Log panic event
+    await this.eventsService.logEvent({
+      gameId,
+      userId,
+      type: EventType.PANIC_BUTTON,
+      severity: 'CRITICAL' as any,
+      message: `${participant.user.fullName || participant.user.email} hat einen Notruf ausgelöst`,
+      metadata: { location },
+    });
+
+    return {
+      success: true,
+      timestamp: panicPosition.timestamp,
+      message: 'Panic alert triggered - staff has been notified',
+    };
+  }
+
+  async overridePosition(
+    gameId: string,
+    targetUserId: string,
+    location: { latitude: number; longitude: number },
+    executorId: string,
+  ): Promise<Position> {
+    // Start transaction with pessimistic write lock
+    return await this.positionsRepository.manager.transaction(
+      async (transactionalEntityManager) => {
+        // Lock game record to prevent race conditions
+        const game = await transactionalEntityManager
+          .getRepository('games')
+          .createQueryBuilder('game')
+          .setLock('pessimistic_write')
+          .where('game.id = :gameId', { gameId })
+          .getOne();
+
+        if (!game) {
+          throw new NotFoundException('Game not found');
+        }
+
+        // Verify executor has permission (ORGA or OPERATOR)
+        const executorParticipant = await transactionalEntityManager
+          .getRepository('game_participants')
+          .findOne({
+            where: { userId: executorId, gameId },
+          });
+
+        if (
+          !executorParticipant ||
+          (executorParticipant.role !== Role.ORGA &&
+            executorParticipant.role !== Role.OPERATOR)
+        ) {
+          throw new ForbiddenException(
+            'Only ORGA/OPERATOR can override positions',
+          );
+        }
+
+        // Get target participant info for logging
+        const targetParticipant = await transactionalEntityManager
+          .getRepository('game_participants')
+          .findOne({
+            where: { userId: targetUserId, gameId },
+            relations: ['user'],
+          });
+
+        if (!targetParticipant) {
+          throw new NotFoundException('Target participant not found');
+        }
+
+        // Create position with override flag
+        const point: Point = {
+          type: 'Point',
+          coordinates: [location.longitude, location.latitude],
+        };
+
+        const position = transactionalEntityManager
+          .getRepository(Position)
+          .create({
+            gameId,
+            participantId: targetUserId,
+            location: point,
+            timestamp: new Date(),
+            accuracy: 0, // 0 indicates manual override
+          });
+
+        const savedPosition = await transactionalEntityManager
+          .getRepository(Position)
+          .save(position);
+
+        // Log override event with audit trail
+        await this.eventsService.logEvent({
+          gameId,
+          userId: targetUserId,
+          type: EventType.POSITION_OVERRIDE,
+          severity: 'WARNING' as any,
+          message: `Position manually overridden`,
+          metadata: {
+            executorId,
+            executorName:
+              executorParticipant.user?.fullName ||
+              executorParticipant.user?.email,
+            targetUserId,
+            targetUserName:
+              targetParticipant.user?.fullName || targetParticipant.user?.email,
+            location: point,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        return savedPosition;
+      },
+    );
   }
 }

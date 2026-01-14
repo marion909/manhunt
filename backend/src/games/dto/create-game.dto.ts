@@ -8,6 +8,8 @@ import {
   Min,
   IsArray,
   ValidateNested,
+  IsEnum,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -19,7 +21,8 @@ export class CreateBoundaryDto {
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ enum: BoundaryType, example: BoundaryType.GAME_AREA })
+  @ApiProperty({ enum: BoundaryType, example: BoundaryType.INNER_ZONE })
+  @IsEnum(BoundaryType)
   type: BoundaryType;
 
   @ApiProperty({
@@ -36,6 +39,7 @@ export class CreateBoundaryDto {
       ],
     },
   })
+  @IsObject()
   geometry: any;
 }
 
@@ -94,4 +98,15 @@ export class CreateGameDto {
   @Type(() => CreateBoundaryDto)
   @IsOptional()
   boundaries?: CreateBoundaryDto[];
+
+  @ApiProperty({
+    example: {
+      type: 'Point',
+      coordinates: [13.404954, 52.520008],
+    },
+    required: false,
+  })
+  @IsObject()
+  @IsOptional()
+  centerPoint?: any;
 }

@@ -37,13 +37,13 @@ export class PingProcessor extends WorkerHost {
 
       this.logger.log(`Generating pings for ${players.length} players in game ${gameId}`);
 
-      // Generate ping for each player
+      // Generate ping for each player (using participant id, not userId)
       for (const player of players) {
         try {
-          await this.trackingService.generatePing(gameId, player.userId);
+          await this.trackingService.generatePing(gameId, player.id);
         } catch (error) {
           this.logger.error(
-            `Failed to generate ping for user ${player.userId}: ${error.message}`,
+            `Failed to generate ping for participant ${player.id}: ${error.message}`,
             error.stack,
           );
         }

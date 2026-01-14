@@ -66,12 +66,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Generate token
+    // Generate tokens
     const payload = { sub: user.id, email: user.email };
     const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
 
     return {
       accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -86,5 +88,30 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
     return user;
+  }
+
+  async refreshToken(refreshToken: string) {
+    try {
+      // Verify refresh token
+      const payload = this.jwtService.verify(refreshToken);
+      
+      // Find user
+      const user = await this.usersRepository.findOne({ where: { id: payload.sub } });
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      // Generate new tokens
+      const newPayload = { sub: user.id, email: user.email };
+      const newAccessToken = this.jwtService.sign(newPayload);
+      const newRefreshToken = this.jwtService.sign(newPayload, { expiresIn: '7d' });
+
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
   }
 }

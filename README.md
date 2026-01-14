@@ -16,7 +16,7 @@ MANHUNT ist eine Echtzeit-Multiplayer-Tracking-Plattform, die es ermöglicht, GP
 ## 🏗️ Tech Stack
 
 ### Backend
-- **Runtime**: Bun + Node.js 24
+- **Runtime**: Node.js 22
 - **Framework**: NestJS (TypeScript)
 - **Datenbank**: PostgreSQL 16 + PostGIS
 - **Caching**: Redis 7
@@ -24,20 +24,26 @@ MANHUNT ist eine Echtzeit-Multiplayer-Tracking-Plattform, die es ermöglicht, GP
 - **Queue**: Bull (für Ping-Scheduler)
 - **Auth**: JWT + Passport
 
-### Frontend
-- **Framework**: Next.js 14 (App Router)
+### Frontend (Web)
+- **Framework**: Next.js 16 (App Router)
 - **Maps**: Mapbox GL JS
+- **State**: Zustand + TanStack Query
+- **Styling**: TailwindCSS 4
+- **WebSocket**: Socket.IO Client
+
+### Mobile App
+- **Framework**: React Native + Expo
+- **Camera**: expo-camera (QR-Scanner)
 - **State**: Zustand
-- **Styling**: TailwindCSS
 - **WebSocket**: Socket.IO Client
 
 ## 🚀 Schnellstart
 
 ### Voraussetzungen
 
-- [Bun](https://bun.sh) >= 1.0
 - [Docker](https://www.docker.com/) & Docker Compose
 - [Git](https://git-scm.com/)
+- [Expo Go](https://expo.dev/client) (für Mobile App)
 
 ### Installation
 
@@ -46,21 +52,13 @@ MANHUNT ist eine Echtzeit-Multiplayer-Tracking-Plattform, die es ermöglicht, GP
 git clone https://github.com/your-org/manhunt.git
 cd manhunt
 
-# Docker-Services starten (PostgreSQL + Redis)
-docker-compose up -d postgres redis
+# Alle Services mit Docker starten
+docker-compose up -d
 
-# Backend einrichten
-cd backend
-cp .env.example .env
-bun install
-bun run migration:run
-bun run start:dev
-
-# Frontend einrichten (neues Terminal)
-cd ../frontend
-cp .env.local.example .env.local
-bun install
-bun run dev
+# Mobile App starten (separates Terminal)
+cd app
+npm install
+npx expo start
 ```
 
 ### URLs
@@ -68,6 +66,7 @@ bun run dev
 - **Backend API**: http://localhost:3000
 - **Frontend**: http://localhost:3001
 - **API Docs**: http://localhost:3000/api
+- **Expo**: http://localhost:8081
 
 ## 📁 Projektstruktur
 
@@ -75,50 +74,88 @@ bun run dev
 manhunt/
 ├── backend/          # NestJS Backend
 │   ├── src/
-│   │   ├── auth/
-│   │   ├── users/
-│   │   ├── games/
-│   │   ├── tracking/
-│   │   ├── events/
-│   │   ├── invitations/
-│   │   ├── rules/
-│   │   └── geospatial/
-│   ├── test/
+│   │   ├── auth/           # JWT Authentication
+│   │   ├── users/          # User Management
+│   │   ├── games/          # Game & Participant Management
+│   │   ├── tracking/       # GPS Tracking & Ping System
+│   │   ├── events/         # Event/Audit System
+│   │   ├── invitations/    # Token-based Invitations
+│   │   ├── rules/          # Game Rules Engine
+│   │   ├── captures/       # Hunter-Player Captures
+│   │   └── geospatial/     # PostGIS Integration
 │   └── Dockerfile
-├── frontend/         # Next.js Frontend
+├── frontend/         # Next.js Web Frontend
 │   ├── app/
+│   │   └── game/[id]/      # Live Game View
 │   ├── components/
-│   ├── lib/
-│   └── hooks/
+│   │   ├── map.tsx         # Mapbox Integration
+│   │   ├── participant-list.tsx
+│   │   └── ...
+│   ├── hooks/
+│   │   ├── use-websocket.ts
+│   │   └── use-geolocation.ts
+│   └── Dockerfile
+├── app/              # React Native Mobile App
+│   ├── src/
+│   │   ├── screens/
+│   │   │   ├── HunterScreen.tsx
+│   │   │   ├── PlayerScreen.tsx
+│   │   │   └── QRScanScreen.tsx
+│   │   ├── services/
+│   │   │   └── websocket.service.ts
+│   │   └── store/
+│   └── app.json
 ├── docker-compose.yml
 └── README.md
 ```
 
 ## 🗺️ Features
 
-### Phase 1 (MVP) - Aktuell in Entwicklung
-- ✅ Benutzer-Authentifizierung
-- ✅ Spiel-Erstellung mit Geofencing
+### ✅ Implementiert
+
+#### Core Features
+- ✅ Benutzer-Authentifizierung (JWT)
+- ✅ Spiel-Erstellung mit Geofencing (Polygon-Editor)
 - ✅ Einladungs-Token-System
 - ✅ Live-GPS-Tracking (WebSocket)
-- ✅ Ping-System für Player
-- ✅ Rollen-Management
+- ✅ Ping-System für Player (manuell durch Orga)
+- ✅ Rollen-Management (Orga, Operator, Hunter, Player)
 
-### Phase 2 (Geplant)
-- ⏳ Regelwerk-Engine
-- ⏳ Capture-Logik
-- ⏳ Anti-Cheat-Mechanismen
-- ⏳ Event-Timeline
+#### Web Frontend
+- ✅ Echtzeit-Karte mit Mapbox GL
+- ✅ Position-History Visualisierung
+- ✅ Teilnehmer-Verwaltung mit QR-Code-Generierung
+- ✅ Ping-Button für einzelne Spieler
+- ✅ Event-Timeline
+- ✅ Anti-Cheat-Alerts
+- ✅ Capture-Management
 
-### Phase 3 (Geplant)
-- ⏳ Sicherheitsfeatures (Panik-Button)
-- ⏳ Performance-Optimierung
-- ⏳ Logging & Export
+#### Mobile App
+- ✅ QR-Code-Scanner für Spielbeitritt
+- ✅ Hunter-Modus mit Live-Karte
+- ✅ Player-Modus mit Ping-Status-Anzeige
+- ✅ Panic-Button für Notfälle
+- ✅ Automatische GPS-Position-Sendung
+- ✅ Offline-Queue für schlechte Verbindung
+- ✅ Batterie-Anzeige
 
-### Phase 4 (Geplant)
-- ⏳ Mobile App (Flutter/React Native)
-- ⏳ Offline-Support
+#### Backend
+- ✅ WebSocket Gateway mit Auth
+- ✅ Position-Broadcasting nach Rolle
+- ✅ Ping-Generierung mit Offset
+- ✅ Geofencing-Validierung
+- ✅ Event-Logging
+
+### 🔄 In Entwicklung
+- 🔄 Regelwerk-Engine (aktiv/deaktivierbar)
+- 🔄 Automatische Ping-Scheduler
+- 🔄 Capture-Bestätigung mit QR-Code
+
+### ⏳ Geplant
 - ⏳ Push-Benachrichtigungen
+- ⏳ Offline-Karten-Support
+- ⏳ Spiel-Export/Replay
+- ⏳ Statistik-Dashboard
 
 ## 🛠️ Entwicklung
 
@@ -126,38 +163,33 @@ manhunt/
 
 ```bash
 cd backend
-
-# Development
-bun run start:dev
-
-# Tests
-bun run test
-bun run test:e2e
+npm install
+npm run start:dev
 
 # Migrations
-bun run migration:generate -- src/migrations/MigrationName
-bun run migration:run
-bun run migration:revert
-
-# Linting
-bun run lint
-bun run format
+npm run migration:run
 ```
 
 ### Frontend
 
 ```bash
 cd frontend
-
-# Development
+bun install
 bun run dev
+```
 
-# Build
-bun run build
-bun run start
+### Mobile App
 
-# Linting
-bun run lint
+```bash
+cd app
+npm install
+npx expo start
+
+# Für Android
+npx expo start --android
+
+# Für iOS
+npx expo start --ios
 ```
 
 ## 🐳 Docker
@@ -169,10 +201,14 @@ docker-compose up -d
 # Logs anzeigen
 docker-compose logs -f backend
 
+# Einzelnen Service neu bauen
+docker-compose build backend --no-cache
+docker-compose up -d backend
+
 # Services stoppen
 docker-compose down
 
-# Mit Volumes entfernen
+# Mit Volumes entfernen (Datenbank-Reset!)
 docker-compose down -v
 ```
 
@@ -180,12 +216,14 @@ docker-compose down -v
 
 ### Schema
 
-- `users`: Benutzerkonten
-- `games`: Spiel-Sessions
-- `game_participants`: Teilnehmer mit Rollen
+- `users`: Benutzerkonten (Web-Login)
+- `games`: Spiel-Sessions mit Konfiguration
+- `game_participants`: Teilnehmer mit Rollen (auch ohne User-Account)
 - `game_boundaries`: Polygone für Spielbereiche
+- `game_rules`: Konfigurierbare Spielregeln
 - `positions`: GPS-Tracking (Time-Series)
-- `pings`: Enthüllte Player-Positionen
+- `pings`: Enthüllte Player-Positionen mit Offset
+- `captures`: Hunter-Player Fänge
 - `events`: Audit-Log
 - `invitations`: Einladungs-Tokens
 
@@ -193,7 +231,7 @@ docker-compose down -v
 
 Das Projekt nutzt PostGIS für räumliche Datenbanken:
 - Point-in-Polygon-Queries (Geofencing)
-- Distanzberechnungen (Haversine)
+- Distanzberechnungen
 - Spatial Indexes (GIST)
 
 ## 🔐 Umgebungsvariablen
@@ -212,9 +250,29 @@ PORT=3000
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3000
-NEXT_PUBLIC_WS_URL=ws://localhost:3000
+NEXT_PUBLIC_WS_URL=http://localhost:3000
 NEXT_PUBLIC_MAPBOX_TOKEN=your-mapbox-token
 ```
+
+## 📱 Mobile App Setup
+
+### QR-Code Format
+
+Die Mobile App verwendet QR-Codes zum Spielbeitritt:
+
+```
+hostname|gameId|participantId|displayName|role
+```
+
+Beispiel:
+```
+192.168.0.100|d5091eb9-...|be643ba0-...|Player 1|player
+```
+
+### Unterstützte Geräte
+
+- Android 10+ (getestet auf Samsung Galaxy S23)
+- iOS 14+ (mit Expo Go)
 
 ## 📝 API-Dokumentation
 
@@ -227,44 +285,15 @@ Die API-Dokumentation ist verfügbar unter:
 ```bash
 # Backend Tests
 cd backend
-bun run test              # Unit tests
-bun run test:e2e          # E2E tests
-bun run test:cov          # Coverage
-
-# Frontend Tests
-cd frontend
-bun run test
+npm run test              # Unit tests
+npm run test:e2e          # E2E tests
+npm run test:cov          # Coverage
 ```
-
-## 🚀 Deployment
-
-### Production Build
-
-```bash
-# Backend
-cd backend
-docker build -t manhunt-backend:latest --target production .
-
-# Frontend
-cd frontend
-docker build -t manhunt-frontend:latest .
-```
-
-### CI/CD
-
-Das Projekt verwendet GitHub Actions für:
-- Automatische Tests bei Pull Requests
-- Build & Deployment bei Merges in `main`
-- Staging-Deployment bei Merges in `develop`
 
 ## 📄 Lizenz
 
-TBD
+MIT
 
-## 👥 Team
+## 👥 Entwicklung
 
-TBD
-
-## 🤝 Beitragen
-
-TBD
+Entwickelt mit GitHub Copilot (Claude Opus 4.5)

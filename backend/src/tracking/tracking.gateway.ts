@@ -9,20 +9,22 @@ import {
 } from '@nestjs/websockets';
 import { UseGuards } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { TrackingService } from './tracking.service';
 import { GamesService } from '../games/games.service';
 import { PositionUpdateDto } from './dto/position-update.dto';
-import { Role } from '../common/enums';
+import { Role, ParticipantStatus } from '../common/enums';
 
 interface AuthSocket extends Socket {
   userId?: string;
   gameId?: string;
   role?: Role;
+  displayName?: string;
 }
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+    origin: '*',
     credentials: true,
   },
   namespace: '/tracking',
@@ -34,21 +36,55 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     private trackingService: TrackingService,
     private gamesService: GamesService,
+    private jwtService: JwtService,
   ) {}
+
+  // Transform ping data to match frontend expectations
+  private transformPingForFrontend(ping: any) {
+    return {
+      id: ping.id,
+      gameId: ping.gameId,
+      participantId: ping.participantId,
+      userId: ping.participantId, // Alias for backwards compatibility
+      playerName: ping.participant?.displayName || 'Unknown',
+      actualLocation: ping.actualLocation,
+      displayLocation: ping.revealedLocation, // Frontend expects displayLocation
+      offsetDistance: ping.radiusMeters,
+      createdAt: ping.timestamp?.toISOString?.() || ping.timestamp,
+    };
+  }
 
   async handleConnection(client: AuthSocket) {
     console.log(`Client connected: ${client.id}`);
 
     // Extract token from handshake
     const token = client.handshake.auth?.token;
-    if (!token) {
+    const participantId = client.handshake.auth?.participantId;
+    
+    // Allow connections with token OR participantId (for mobile app)
+    if (!token && !participantId) {
+      console.log('No auth token or participantId, disconnecting');
       client.disconnect();
       return;
     }
 
-    // TODO: Verify JWT token and extract userId
-    // For now, accept any connection
-    console.log('Connection authenticated');
+    // Store participantId if provided (mobile app)
+    if (participantId) {
+      client.userId = participantId;
+    }
+
+    // Decode JWT token to get userId (web app)
+    if (token) {
+      try {
+        const decoded = this.jwtService.verify(token);
+        client.userId = decoded.sub; // userId from JWT
+        console.log('JWT decoded, userId:', decoded.sub);
+      } catch (error) {
+        console.log('JWT verification failed, but allowing connection');
+      }
+    }
+
+    console.log('Connection authenticated, userId:', client.userId);
   }
 
   handleDisconnect(client: AuthSocket) {
@@ -61,21 +97,44 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('join:game')
   async handleJoinGame(
     @ConnectedSocket() client: AuthSocket,
-    @MessageBody() data: { gameId: string; userId: string },
+    @MessageBody() data: { gameId: string; participantId?: string },
   ) {
-    const { gameId, userId } = data;
+    const { gameId, participantId } = data;
+    console.log('join:game received:', { gameId, participantId, clientUserId: client.userId });
 
-    // Get user's role in game
-    const role = await this.gamesService.getUserRole(gameId, userId);
+    let role: Role | null = null;
+    let displayName = '';
+
+    // If participantId is provided (mobile app), use getParticipantRole
+    if (participantId) {
+      role = await this.gamesService.getParticipantRole(gameId, participantId);
+      if (role) {
+        const participant = await this.gamesService.getParticipantById(participantId);
+        displayName = participant?.displayName || `Participant #${participant?.participantNumber || '?'}`;
+        client.userId = participantId;
+      }
+    }
+    
+    // Fallback: use userId from JWT token (web app)
+    if (!role && client.userId) {
+      role = await this.gamesService.getUserRole(gameId, client.userId);
+      if (role) {
+        // Get participant info for web user
+        const participant = await this.gamesService.findParticipantByUserId(gameId, client.userId);
+        displayName = participant?.displayName || participant?.user?.fullName || 'Unknown';
+      }
+    }
+
     if (!role) {
+      console.log('User not found in game:', { gameId, participantId, userId: client.userId });
       client.emit('error', { message: 'Not a participant in this game' });
       return;
     }
 
-    // Store user info on socket
-    client.userId = userId;
+    // Store participant info on socket
     client.gameId = gameId;
     client.role = role;
+    client.displayName = displayName;
 
     // Join game room
     client.join(`game:${gameId}`);
@@ -86,9 +145,10 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       const hunterPositions = await this.trackingService.getHunterPositions(gameId);
       client.emit('positions:hunters', hunterPositions);
 
-      // Send recent pings
+      // Send recent pings (transformed to match frontend expectations)
       const pings = await this.trackingService.getPlayerPings(gameId);
-      client.emit('pings:players', pings);
+      const transformedPings = pings.map(ping => this.transformPingForFrontend(ping));
+      client.emit('pings:players', transformedPings);
     }
 
     client.emit('join:success', { gameId, role });
@@ -123,6 +183,8 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       // Broadcast hunter position to all in game
       this.server.to(`game:${gameId}`).emit('position:hunter', {
         userId,
+        participantId: userId,
+        displayName: client.displayName,
         position,
       });
     } else if (role === Role.PLAYER) {
@@ -146,22 +208,123 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() data: { playerId: string },
   ) {
     const { gameId, role } = client;
+    console.log('ping:generate received:', { gameId, role, playerId: data.playerId });
 
     if (!gameId) {
       client.emit('error', { message: 'Not joined to a game' });
       return;
     }
 
-    // Only ORGA can manually trigger pings
-    if (role !== Role.ORGA) {
-      client.emit('error', { message: 'Only ORGA can trigger pings' });
+    // ORGA and OPERATOR can manually trigger pings
+    if (role !== Role.ORGA && role !== Role.OPERATOR) {
+      console.log('Ping denied - role not authorized:', role);
+      client.emit('error', { message: 'Only ORGA or OPERATOR can trigger pings' });
       return;
     }
 
-    const ping = await this.trackingService.generatePing(gameId, data.playerId);
+    try {
+      const ping = await this.trackingService.generatePing(gameId, data.playerId);
+      const transformedPing = this.transformPingForFrontend(ping);
+      console.log('Ping generated:', transformedPing);
 
-    // Broadcast ping to all
-    this.server.to(`game:${gameId}`).emit('ping:new', ping);
+      // Broadcast ping to all
+      this.server.to(`game:${gameId}`).emit('ping:generated', transformedPing);
+      this.server.to(`game:${gameId}`).emit('ping:new', transformedPing);
+    } catch (error) {
+      console.error('Failed to generate ping:', error);
+      client.emit('error', { message: 'Failed to generate ping: ' + error.message });
+    }
+  }
+
+  // Manual ping for all players (alias for backwards compatibility)
+  @SubscribeMessage('manual_ping')
+  async handleManualPing(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { gameId: string },
+  ) {
+    const { role } = client;
+    const gameId = data.gameId || client.gameId;
+    console.log('manual_ping received:', { gameId, role });
+
+    if (!gameId) {
+      client.emit('error', { message: 'Not joined to a game' });
+      return;
+    }
+
+    // ORGA and OPERATOR can trigger manual pings
+    if (role !== Role.ORGA && role !== Role.OPERATOR) {
+      console.log('Manual ping denied - role not authorized:', role);
+      client.emit('error', { message: 'Only ORGA or OPERATOR can trigger pings' });
+      return;
+    }
+
+    try {
+      // Get all players in the game
+      const participants = await this.gamesService.getGameParticipants(gameId);
+      const players = participants.filter(p => p.role === Role.PLAYER && p.status === ParticipantStatus.ACTIVE);
+      
+      console.log('Generating pings for', players.length, 'players');
+      
+      for (const player of players) {
+        try {
+          const ping = await this.trackingService.generatePing(gameId, player.id);
+          const transformedPing = this.transformPingForFrontend(ping);
+          this.server.to(`game:${gameId}`).emit('ping:generated', transformedPing);
+          this.server.to(`game:${gameId}`).emit('ping:new', transformedPing);
+        } catch (playerError) {
+          console.error(`Failed to generate ping for player ${player.id}:`, playerError);
+        }
+      }
+      
+      client.emit('manual_ping:success', { count: players.length });
+    } catch (error) {
+      console.error('Failed to generate manual pings:', error);
+      client.emit('error', { message: 'Failed to generate pings: ' + error.message });
+    }
+  }
+
+  // Test event - allows sending positions for any participant (development only)
+  @SubscribeMessage('test:position')
+  async handleTestPosition(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() data: { participantId: string; latitude: number; longitude: number; accuracy?: number },
+  ) {
+    const { gameId } = client;
+
+    if (!gameId) {
+      client.emit('error', { message: 'Not joined to a game' });
+      return;
+    }
+
+    const { participantId, ...positionDto } = data;
+
+    // Get participant by ID (works for both regular and manual participants)
+    const participant = await this.gamesService.getParticipantById(participantId);
+    if (!participant || participant.gameId !== gameId) {
+      client.emit('error', { message: 'Participant not found in game' });
+      return;
+    }
+
+    // Save position with participantId
+    const position = await this.trackingService.savePosition(gameId, participantId, positionDto);
+
+    // Broadcast position based on role (in test mode, broadcast all positions for visibility)
+    if (participant.role === Role.HUNTER) {
+      this.server.to(`game:${gameId}`).emit('position:hunter', {
+        participantId,
+        position,
+        role: participant.role,
+      });
+    } else if (participant.role === Role.PLAYER) {
+      // In test mode, also broadcast player positions for testing purposes
+      this.server.to(`game:${gameId}`).emit('position:player', {
+        participantId,
+        position,
+        role: participant.role,
+      });
+    }
+
+    client.emit('test:position:success', { participantId, position });
   }
 
   @SubscribeMessage('leave:game')
@@ -173,5 +336,35 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.role = undefined;
     }
     client.emit('leave:success');
+  }
+
+  // Broadcast game status change to all participants
+  broadcastGameStatusChange(gameId: string, status: string) {
+    this.server.to(`game:${gameId}`).emit('game:status-changed', { status });
+  }
+
+  // Broadcast participant status change
+  broadcastParticipantStatusChange(gameId: string, userId: string, status: string) {
+    this.server.to(`game:${gameId}`).emit('participant:status-changed', { userId, status });
+  }
+
+  // Broadcast capture initiation to orga/operators
+  broadcastCaptureInitiated(gameId: string, capture: any) {
+    this.server.to(`game:${gameId}`).emit('capture:initiated', capture);
+  }
+
+  // Broadcast capture confirmed to all participants
+  broadcastCaptureConfirmed(gameId: string, capture: any) {
+    this.server.to(`game:${gameId}`).emit('capture:confirmed', capture);
+  }
+
+  // Broadcast capture rejected
+  broadcastCaptureRejected(gameId: string, capture: any) {
+    this.server.to(`game:${gameId}`).emit('capture:rejected', capture);
+  }
+
+  // Broadcast new event to all participants
+  broadcastEvent(gameId: string, event: any) {
+    this.server.to(`game:${gameId}`).emit('event:new', event);
   }
 }

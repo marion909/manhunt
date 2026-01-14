@@ -21,6 +21,19 @@ import { EventSeverity } from '../common/enums/event-severity.enum';
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
+  @Get('game/:gameId')
+  @ApiOperation({ summary: 'Get all events for a game' })
+  @ApiResponse({ status: 200, description: 'Events retrieved successfully' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async getGameEventsSingular(
+    @Param('gameId') gameId: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+  ): Promise<{ events: Event[]; total: number }> {
+    return this.eventsService.findByGame(gameId, limit, offset);
+  }
+
   @Get('games/:gameId')
   @ApiOperation({ summary: 'Get all events for a game' })
   @ApiResponse({ status: 200, description: 'Events retrieved successfully' })

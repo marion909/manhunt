@@ -8,11 +8,11 @@ import {
   Index,
 } from 'typeorm';
 import { Game } from '../../games/entities/game.entity';
-import { User } from '../../users/entities/user.entity';
+import { GameParticipant } from '../../games/entities/game-participant.entity';
 import type { Point } from 'geojson';
 
 @Entity('positions')
-@Index(['gameId', 'userId', 'timestamp'])
+@Index(['gameId', 'participantId', 'timestamp'])
 export class Position {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -20,8 +20,8 @@ export class Position {
   @Column({ name: 'game_id' })
   gameId: string;
 
-  @Column({ name: 'user_id' })
-  userId: string;
+  @Column({ name: 'participant_id' })
+  participantId: string;
 
   @Column({
     type: 'geometry',
@@ -49,6 +49,12 @@ export class Position {
   @Column({ name: 'is_emergency', default: false })
   isEmergency: boolean;
 
+  @Column({ name: 'is_override', default: false })
+  isOverride: boolean;
+
+  @Column({ name: 'overridden_by', nullable: true })
+  overriddenBy: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -57,7 +63,7 @@ export class Position {
   @JoinColumn({ name: 'game_id' })
   game: Game;
 
-  @ManyToOne(() => User, (user) => user.positions, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
-  user: User;
+  @ManyToOne(() => GameParticipant, (participant) => participant.positions, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'participant_id' })
+  participant: GameParticipant;
 }

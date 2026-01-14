@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import * as turf from '@turf/turf';
 import { GameBoundary } from '../games/entities/game-boundary.entity';
 import { Point, Polygon } from 'geojson';
+import { BoundaryType } from '../common/enums';
 
 @Injectable()
 export class GeospatialService {
@@ -34,7 +35,7 @@ export class GeospatialService {
     const result = await this.boundariesRepository
       .createQueryBuilder('boundary')
       .where('boundary.gameId = :gameId', { gameId })
-      .andWhere("boundary.type = 'game_area'")
+      .andWhere('boundary.type = :type', { type: BoundaryType.GAME_AREA })
       .andWhere('boundary.active = true')
       .andWhere('ST_Contains(boundary.geometry, ST_SetSRID(ST_GeomFromGeoJSON(:point), 4326))', {
         point: JSON.stringify(point),

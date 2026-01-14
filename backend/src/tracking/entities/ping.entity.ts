@@ -8,11 +8,11 @@ import {
   Index,
 } from 'typeorm';
 import { Game } from '../../games/entities/game.entity';
-import { User } from '../../users/entities/user.entity';
+import { GameParticipant } from '../../games/entities/game-participant.entity';
 import type { Point } from 'geojson';
 
 @Entity('pings')
-@Index(['gameId', 'playerId'])
+@Index(['gameId', 'participantId'])
 export class Ping {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -20,8 +20,8 @@ export class Ping {
   @Column({ name: 'game_id' })
   gameId: string;
 
-  @Column({ name: 'player_id' })
-  playerId: string;
+  @Column({ name: 'participant_id' })
+  participantId: string;
 
   @Column({
     type: 'geometry',
@@ -58,7 +58,7 @@ export class Ping {
   @JoinColumn({ name: 'game_id' })
   game: Game;
 
-  @ManyToOne(() => User)
-  @JoinColumn({ name: 'player_id' })
-  player: User;
+  @ManyToOne(() => GameParticipant)
+  @JoinColumn({ name: 'participant_id' })
+  participant: GameParticipant;
 }

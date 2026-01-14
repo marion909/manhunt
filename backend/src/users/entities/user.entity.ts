@@ -37,9 +37,6 @@ export class User {
   @OneToMany(() => GameParticipant, (participant) => participant.user)
   gameParticipations: GameParticipant[];
 
-  @OneToMany(() => Position, (position) => position.user)
-  positions: Position[];
-
   @OneToMany(() => Event, (event) => event.user)
   events: Event[];
 }

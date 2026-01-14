@@ -62,7 +62,7 @@ services:
       JWT_EXPIRATION: 7d
       PORT: 3000
       API_PREFIX: api
-      CORS_ORIGIN: http://localhost:3001
+      CORS_ORIGIN: "*"
       QUEUE_PREFIX: manhunt
     volumes:
       - ./backend:/app
@@ -76,28 +76,28 @@ services:
     networks:
       - manhunt-network
 
-  # Next.js Frontend (will be added later)
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #     target: development
-  #   container_name: manhunt-frontend
-  #   ports:
-  #     - "3001:3000"
-  #   environment:
-  #     NEXT_PUBLIC_API_URL: http://localhost:3000/api
-  #     NEXT_PUBLIC_WS_URL: ws://localhost:3000
-  #     NEXT_PUBLIC_MAPBOX_TOKEN: ${MAPBOX_TOKEN}
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #     - /app/.next
-  #   depends_on:
-  #     - backend
-  #   command: bun run dev
-  #   networks:
-  #     - manhunt-network
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: manhunt-frontend
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://192.168.0.100:3000/api
+      NEXT_PUBLIC_WS_URL: ws://192.168.0.100:3000
+      NEXT_PUBLIC_MAPBOX_TOKEN: pk.eyJ1IjoibWFyaW9uODA4IiwiYSI6ImNta2NzdGMxeTA0MzkzZXF5bWtudjF4dTEifQ.SpjnsFl3fzKnHd9T9zksJQ
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    command: bun run dev
+    networks:
+      - manhunt-network
 
 volumes:
   postgres_data:
