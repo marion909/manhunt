@@ -54,6 +54,12 @@ export class RulesService {
     });
   }
 
+  async findByGameAndType(gameId: string, ruleType: RuleType): Promise<GameRule | null> {
+    return this.rulesRepository.findOne({
+      where: { gameId, ruleType },
+    });
+  }
+
   async getRule(id: string): Promise<GameRule> {
     const rule = await this.rulesRepository.findOne({ where: { id } });
     if (!rule) {

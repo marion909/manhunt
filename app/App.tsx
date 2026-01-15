@@ -6,14 +6,18 @@ import { BackHandler, Alert } from 'react-native';
 import { useAuthStore } from './src/store/auth.store';
 import { locationService } from './src/services/location.service';
 import { websocketService } from './src/services/websocket.service';
+import { chatService } from './src/services/chat.service';
+import { voiceService } from './src/services/voice.service';
 import { queueService } from './src/services/queue.service';
 
 // Screens
 import SplashScreen from './src/screens/SplashScreen';
 import QRScanScreen from './src/screens/QRScanScreen';
-import HunterScreen from './src/screens/HunterScreen';
-import PlayerScreen from './src/screens/PlayerScreen';
-import OrgaScreen from './src/screens/OrgaScreen';
+
+// Tab Navigators
+import { HunterTabNavigator } from './src/navigation/HunterTabNavigator';
+import { PlayerTabNavigator } from './src/navigation/PlayerTabNavigator';
+import { OrgaTabNavigator } from './src/navigation/OrgaTabNavigator';
 
 const Stack = createStackNavigator();
 
@@ -37,6 +41,8 @@ export default function App() {
     return () => {
       backHandler.remove();
       websocketService.disconnect();
+      chatService.disconnect();
+      voiceService.disconnect();
       locationService.stopWatching();
     };
   }, []);
@@ -84,6 +90,10 @@ export default function App() {
 
       // Connect to WebSocket
       websocketService.connect(hostname);
+      
+      // Connect chat and voice services
+      chatService.connect(hostname);
+      voiceService.connect(hostname);
 
       // Wait a bit for connection to establish
       setTimeout(() => {
@@ -123,7 +133,7 @@ export default function App() {
             gestureEnabled: false,
           }}
         >
-          {console.log('Navigation: isLoading=', isLoading, 'isAuthenticated=', isAuthenticated)}
+          {console.log('Navigation: isLoading=', isLoading, 'isAuthenticated=', isAuthenticated, 'role=', role)}
           {isLoading ? (
             <Stack.Screen name="Splash" component={SplashScreen} />
           ) : !isAuthenticated ? (
@@ -150,12 +160,12 @@ export default function App() {
                 />
               )}
             </Stack.Screen>
+          ) : role === 'HUNTER' ? (
+            <Stack.Screen name="Hunter" component={HunterTabNavigator} />
+          ) : role === 'ORGA' || role === 'OPERATOR' ? (
+            <Stack.Screen name="Orga" component={OrgaTabNavigator} />
           ) : (
-            <>
-              <Stack.Screen name="Hunter" component={HunterScreen} />
-              <Stack.Screen name="Player" component={PlayerScreen} />
-              <Stack.Screen name="Orga" component={OrgaScreen} />
-            </>
+            <Stack.Screen name="Player" component={PlayerTabNavigator} />
           )}
         </Stack.Navigator>
       </NavigationContainer>

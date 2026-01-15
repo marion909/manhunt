@@ -38,6 +38,30 @@ services:
     networks:
       - manhunt-network
 
+  # TURN Server for WebRTC NAT traversal
+  coturn:
+    image: coturn/coturn:4.6.2-alpine
+    container_name: manhunt-coturn
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49152-49252:49152-49252/udp"
+    environment:
+      TURN_SECRET: manhunt-turn-secret-change-in-production
+    command: >
+      -n
+      --realm=manhunt.local
+      --fingerprint
+      --lt-cred-mech
+      --use-auth-secret
+      --static-auth-secret=manhunt-turn-secret-change-in-production
+      --min-port=49152
+      --max-port=49252
+      --log-file=stdout
+      --external-ip=$${EXTERNAL_IP:-192.168.0.100}
+    networks:
+      - manhunt-network
+
   # NestJS Backend (optional - can run locally)
   backend:
     build:

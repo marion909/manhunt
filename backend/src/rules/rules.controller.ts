@@ -11,6 +11,7 @@ import {
 import { RulesService, CreateRuleDto, UpdateRuleDto } from './rules.service';
 import { GameRule } from './entities/game-rule.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('games/:gameId/rules')
 @UseGuards(JwtAuthGuard)
@@ -26,6 +27,7 @@ export class RulesController {
   }
 
   @Get()
+  @Public()
   async getRules(@Param('gameId') gameId: string): Promise<GameRule[]> {
     return this.rulesService.getRules(gameId);
   }

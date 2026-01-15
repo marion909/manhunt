@@ -20,6 +20,7 @@ interface AuthSocket extends Socket {
   gameId?: string;
   role?: Role;
   displayName?: string;
+  isHunterToken?: boolean;
 }
 
 @WebSocketGateway({
@@ -57,9 +58,30 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleConnection(client: AuthSocket) {
     console.log(`Client connected: ${client.id}`);
 
-    // Extract token from handshake
+    // Extract auth options from handshake
     const token = client.handshake.auth?.token;
     const participantId = client.handshake.auth?.participantId;
+    const hunterToken = client.handshake.auth?.hunterToken;
+    const hunterGameId = client.handshake.auth?.gameId;
+
+    // Hunter token authentication (public hunter dashboard)
+    if (hunterToken && hunterGameId) {
+      try {
+        const result = await this.gamesService.validateHunterToken(hunterGameId, hunterToken);
+        if (result.valid) {
+          client.isHunterToken = true;
+          client.gameId = hunterGameId;
+          client.role = Role.HUNTER;
+          client.displayName = 'Hunter Dashboard';
+          console.log('Hunter token authenticated for game:', hunterGameId);
+          return;
+        }
+      } catch (error) {
+        console.log('Hunter token validation failed:', error);
+      }
+      client.disconnect();
+      return;
+    }
     
     // Allow connections with token OR participantId (for mobile app)
     if (!token && !participantId) {
@@ -105,8 +127,14 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
     let role: Role | null = null;
     let displayName = '';
 
+    // If already authenticated via hunter token, use stored values
+    if (client.isHunterToken && client.gameId === gameId) {
+      role = client.role || Role.HUNTER;
+      displayName = client.displayName || 'Hunter Dashboard';
+    }
+
     // If participantId is provided (mobile app), use getParticipantRole
-    if (participantId) {
+    if (!role && participantId) {
       role = await this.gamesService.getParticipantRole(gameId, participantId);
       if (role) {
         const participant = await this.gamesService.getParticipantById(participantId);

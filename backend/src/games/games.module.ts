@@ -7,12 +7,13 @@ import { GameParticipantsController } from './game-participants.controller';
 import { Game } from './entities/game.entity';
 import { GameParticipant } from './entities/game-participant.entity';
 import { GameBoundary } from './entities/game-boundary.entity';
+import { HunterAccess } from './entities/hunter-access.entity';
 import { CaptureCodeService } from '../captures/capture-code.service';
 import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Game, GameParticipant, GameBoundary]),
+    TypeOrmModule.forFeature([Game, GameParticipant, GameBoundary, HunterAccess]),
     EventsModule,
   ],
   controllers: [GamesController, GameParticipantsController],

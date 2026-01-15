@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { TrackingService } from './tracking.service';
 import { PositionUpdateDto } from './dto/position-update.dto';
 import { PanicRequestDto } from './dto/panic-request.dto';
 import { OverridePositionDto } from './dto/override-position.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
+import { GamesService } from '../games/games.service';
 import { Point } from 'geojson';
 
 @ApiTags('tracking')
@@ -13,7 +15,10 @@ import { Point } from 'geojson';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class TrackingController {
-  constructor(private readonly trackingService: TrackingService) {}
+  constructor(
+    private readonly trackingService: TrackingService,
+    private readonly gamesService: GamesService,
+  ) {}
 
   @Post('games/:gameId/position')
   @ApiOperation({ summary: 'Update position (REST fallback)' })
@@ -85,5 +90,80 @@ export class TrackingController {
       dto.location,
       user.userId,
     );
+  }
+
+  // ============================================
+  // PUBLIC HUNTER DASHBOARD ENDPOINTS
+  // ============================================
+
+  @Get('hunter/:gameId/:token/hunters')
+  @Public()
+  @ApiOperation({ summary: 'Get hunter positions (public with token)' })
+  @ApiResponse({ status: 200, description: 'Hunter positions retrieved' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async getHunterPositionsPublic(
+    @Param('gameId') gameId: string,
+    @Param('token') token: string,
+  ) {
+    const isValid = await this.gamesService.validateHunterToken(gameId, token);
+    if (!isValid.valid) {
+      throw new UnauthorizedException('Invalid or expired hunter token');
+    }
+    return this.trackingService.getHunterPositions(gameId);
+  }
+
+  @Get('hunter/:gameId/:token/pings')
+  @Public()
+  @ApiOperation({ summary: 'Get player pings with filters (public with token)' })
+  @ApiQuery({ name: 'participantIds', required: false, description: 'Comma-separated participant IDs to filter' })
+  @ApiQuery({ name: 'since', required: false, description: 'ISO timestamp to filter pings after' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Max number of pings to return' })
+  @ApiResponse({ status: 200, description: 'Pings retrieved' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async getPingsPublic(
+    @Param('gameId') gameId: string,
+    @Param('token') token: string,
+    @Query('participantIds') participantIds?: string,
+    @Query('since') since?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const isValid = await this.gamesService.validateHunterToken(gameId, token);
+    if (!isValid.valid) {
+      throw new UnauthorizedException('Invalid or expired hunter token');
+    }
+
+    const options = {
+      participantIds: participantIds ? participantIds.split(',') : undefined,
+      since: since ? new Date(since) : undefined,
+      limit: limit ? parseInt(limit, 10) : 100,
+    };
+
+    const pings = await this.trackingService.getPlayerPingsFiltered(gameId, options);
+    return pings.map((ping) => ({
+      id: ping.id,
+      gameId: ping.gameId,
+      participantId: ping.participantId,
+      playerName: ping.participant?.displayName || 'Unknown',
+      actualLocation: ping.actualLocation,
+      displayLocation: ping.revealedLocation,
+      offsetDistance: ping.radiusMeters,
+      createdAt: ping.timestamp.toISOString(),
+    }));
+  }
+
+  @Get('hunter/:gameId/:token/boundaries')
+  @Public()
+  @ApiOperation({ summary: 'Get game boundaries (public with token)' })
+  @ApiResponse({ status: 200, description: 'Boundaries retrieved' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async getBoundariesPublic(
+    @Param('gameId') gameId: string,
+    @Param('token') token: string,
+  ) {
+    const result = await this.gamesService.validateHunterToken(gameId, token);
+    if (!result.valid || !result.game) {
+      throw new UnauthorizedException('Invalid or expired hunter token');
+    }
+    return result.game.boundaries || [];
   }
 }

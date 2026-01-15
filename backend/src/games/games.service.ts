@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 import { Game } from './entities/game.entity';
 import { GameParticipant } from './entities/game-participant.entity';
 import { GameBoundary } from './entities/game-boundary.entity';
+import { HunterAccess } from './entities/hunter-access.entity';
 import { CreateGameDto } from './dto/create-game.dto';
 import { UpdateGameDto } from './dto/update-game.dto';
 import { GameStatus, Role } from '../common/enums';
@@ -18,6 +20,8 @@ export class GamesService {
     private participantsRepository: Repository<GameParticipant>,
     @InjectRepository(GameBoundary)
     private boundariesRepository: Repository<GameBoundary>,
+    @InjectRepository(HunterAccess)
+    private hunterAccessRepository: Repository<HunterAccess>,
     private captureCodeService: CaptureCodeService,
   ) {}
 
@@ -256,5 +260,91 @@ export class GamesService {
     await this.gamesRepository.save(game);
 
     return this.findOne(id, userId);
+  }
+
+  // Hunter Access Methods
+
+  async getHunterAccess(gameId: string): Promise<HunterAccess | null> {
+    return this.hunterAccessRepository.findOne({
+      where: { gameId, isActive: true },
+    });
+  }
+
+  async createOrGetHunterAccess(gameId: string, userId: string): Promise<HunterAccess> {
+    // Verify user is ORGA
+    const participant = await this.participantsRepository.findOne({
+      where: { gameId, userId },
+    });
+    if (!participant || participant.role !== Role.ORGA) {
+      throw new ForbiddenException('Only ORGA can manage hunter access');
+    }
+
+    // Check for existing active token
+    const existing = await this.hunterAccessRepository.findOne({
+      where: { gameId, isActive: true },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    // Create new token
+    const hunterAccess = this.hunterAccessRepository.create({
+      gameId,
+      token: uuidv4(),
+      isActive: true,
+    });
+    return this.hunterAccessRepository.save(hunterAccess);
+  }
+
+  async regenerateHunterAccess(gameId: string, userId: string): Promise<HunterAccess> {
+    // Verify user is ORGA
+    const participant = await this.participantsRepository.findOne({
+      where: { gameId, userId },
+    });
+    if (!participant || participant.role !== Role.ORGA) {
+      throw new ForbiddenException('Only ORGA can manage hunter access');
+    }
+
+    // Deactivate all existing tokens for this game
+    await this.hunterAccessRepository.update(
+      { gameId, isActive: true },
+      { isActive: false },
+    );
+
+    // Create new token
+    const hunterAccess = this.hunterAccessRepository.create({
+      gameId,
+      token: uuidv4(),
+      isActive: true,
+    });
+    return this.hunterAccessRepository.save(hunterAccess);
+  }
+
+  async deactivateHunterAccess(gameId: string, userId: string): Promise<void> {
+    // Verify user is ORGA
+    const participant = await this.participantsRepository.findOne({
+      where: { gameId, userId },
+    });
+    if (!participant || participant.role !== Role.ORGA) {
+      throw new ForbiddenException('Only ORGA can manage hunter access');
+    }
+
+    await this.hunterAccessRepository.update(
+      { gameId, isActive: true },
+      { isActive: false },
+    );
+  }
+
+  async validateHunterToken(gameId: string, token: string): Promise<{ valid: boolean; game?: Game }> {
+    const hunterAccess = await this.hunterAccessRepository.findOne({
+      where: { gameId, token, isActive: true },
+      relations: ['game', 'game.boundaries'],
+    });
+
+    if (!hunterAccess) {
+      return { valid: false };
+    }
+
+    return { valid: true, game: hunterAccess.game };
   }
 }

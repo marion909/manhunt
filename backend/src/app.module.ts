@@ -13,6 +13,8 @@ import { TrackingModule } from './tracking/tracking.module';
 import { EventsModule } from './events/events.module';
 import { RulesModule } from './rules/rules.module';
 import { CapturesModule } from './captures/captures.module';
+import { ChatModule } from './chat/chat.module';
+import { VoiceModule } from './voice/voice.module';
 import { User } from './users/entities/user.entity';
 import { Game } from './games/entities/game.entity';
 import { GameParticipant } from './games/entities/game-participant.entity';
@@ -23,6 +25,8 @@ import { Event } from './events/entities/event.entity';
 import { Invitation } from './invitations/entities/invitation.entity';
 import { GameRule } from './rules/entities/game-rule.entity';
 import { Capture } from './captures/entities/capture.entity';
+import { ChatMessage } from './chat/entities/chat-message.entity';
+import { HunterAccess } from './games/entities/hunter-access.entity';
 
 @Module({
   imports: [
@@ -53,6 +57,8 @@ import { Capture } from './captures/entities/capture.entity';
           Invitation,
           GameRule,
           Capture,
+          ChatMessage,
+          HunterAccess,
         ],
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
@@ -93,6 +99,8 @@ import { Capture } from './captures/entities/capture.entity';
     EventsModule,
     RulesModule,
     CapturesModule,
+    ChatModule,
+    VoiceModule,
   ],
   controllers: [],
   providers: [],

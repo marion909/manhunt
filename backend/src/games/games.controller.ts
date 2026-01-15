@@ -117,6 +117,7 @@ export class GamesController {
   }
 
   @Get(':id/participants')
+  @Public()
   @ApiOperation({ summary: 'Get all participants for game' })
   @ApiResponse({ status: 200, description: 'Participants retrieved' })
   getParticipants(@Param('id') id: string) {
@@ -147,5 +148,46 @@ export class GamesController {
     @CurrentUser() user: any,
   ) {
     return this.participantsService.disqualifyParticipant(userId, id, user.userId);
+  }
+
+  // Hunter Access Endpoints
+
+  @Get(':id/hunter-access')
+  @ApiOperation({ summary: 'Get current hunter access token status' })
+  @ApiResponse({ status: 200, description: 'Hunter access retrieved' })
+  getHunterAccess(@Param('id') id: string) {
+    return this.gamesService.getHunterAccess(id);
+  }
+
+  @Post(':id/hunter-access')
+  @ApiOperation({ summary: 'Create or get hunter access token (ORGA only)' })
+  @ApiResponse({ status: 201, description: 'Hunter access created' })
+  @ApiResponse({ status: 403, description: 'Only ORGA can create' })
+  createHunterAccess(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.gamesService.createOrGetHunterAccess(id, user.userId);
+  }
+
+  @Post(':id/hunter-access/regenerate')
+  @ApiOperation({ summary: 'Regenerate hunter access token (ORGA only)' })
+  @ApiResponse({ status: 200, description: 'Hunter access regenerated' })
+  @ApiResponse({ status: 403, description: 'Only ORGA can regenerate' })
+  regenerateHunterAccess(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.gamesService.regenerateHunterAccess(id, user.userId);
+  }
+
+  @Delete(':id/hunter-access')
+  @ApiOperation({ summary: 'Deactivate hunter access token (ORGA only)' })
+  @ApiResponse({ status: 200, description: 'Hunter access deactivated' })
+  @ApiResponse({ status: 403, description: 'Only ORGA can deactivate' })
+  deactivateHunterAccess(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.gamesService.deactivateHunterAccess(id, user.userId);
+  }
+
+  @Get(':id/hunter-access/:token/validate')
+  @Public()
+  @ApiOperation({ summary: 'Validate hunter access token (public)' })
+  @ApiResponse({ status: 200, description: 'Token validated' })
+  validateHunterToken(@Param('id') id: string, @Param('token') token: string) {
+    return this.gamesService.validateHunterToken(id, token);
   }
 }

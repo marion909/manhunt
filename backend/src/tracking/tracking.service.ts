@@ -109,6 +109,38 @@ export class TrackingService {
     });
   }
 
+  async getPlayerPingsFiltered(
+    gameId: string,
+    options: {
+      participantIds?: string[];
+      since?: Date;
+      limit?: number;
+    },
+  ): Promise<Ping[]> {
+    const { participantIds, since, limit = 100 } = options;
+
+    const queryBuilder = this.pingsRepository
+      .createQueryBuilder('ping')
+      .leftJoinAndSelect('ping.participant', 'participant')
+      .where('ping.gameId = :gameId', { gameId });
+
+    if (participantIds && participantIds.length > 0) {
+      queryBuilder.andWhere('ping.participantId IN (:...participantIds)', { participantIds });
+    }
+
+    if (since) {
+      queryBuilder.andWhere('ping.timestamp > :since', { since });
+    } else {
+      // Default: last 24 hours
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      queryBuilder.andWhere('ping.timestamp > :oneDayAgo', { oneDayAgo });
+    }
+
+    queryBuilder.orderBy('ping.timestamp', 'DESC').take(limit);
+
+    return queryBuilder.getMany();
+  }
+
   async generatePing(gameId: string, participantId: string): Promise<Ping> {
     // Get player's current position
     const position = await this.getLatestPosition(gameId, participantId);
