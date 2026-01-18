@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ParticipantLoginDto } from './dto/participant-login.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -25,6 +26,15 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('participant-login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login as game participant (mobile app)' })
+  @ApiResponse({ status: 200, description: 'Participant login successful' })
+  @ApiResponse({ status: 404, description: 'Participant not found' })
+  async participantLogin(@Body() dto: ParticipantLoginDto) {
+    return this.authService.loginParticipant(dto.gameId, dto.participantId);
   }
 
   @Post('refresh')

@@ -6,6 +6,8 @@ import {
   FlatList,
   StyleSheet,
   Alert,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import { useAuthStore } from '../store/auth.store';
 import { useVoiceStore } from '../store/voice.store';
@@ -25,6 +27,7 @@ const CHANNEL_CONFIG: Record<ChatChannel, { label: string; color: string }> = {
 export default function VoiceScreen() {
   const [selectedChannel, setSelectedChannel] = useState<ChatChannel>(ChatChannel.ORGA);
   const [isPlayerVoiceEnabled, setIsPlayerVoiceEnabled] = useState(false);
+  const [hasMicrophonePermission, setHasMicrophonePermission] = useState<boolean | null>(null);
   
   const role = useAuthStore((state) => state.role);
   const hostname = useAuthStore((state) => state.hostname);
@@ -36,6 +39,39 @@ export default function VoiceScreen() {
   const participants = useVoiceStore((state) => state.participants);
   const isMuted = useVoiceStore((state) => state.isMuted);
   const error = useVoiceStore((state) => state.error);
+
+  // Request microphone permission on mount
+  useEffect(() => {
+    const requestMicrophonePermission = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: 'Microphone Permission',
+              message: 'MANHUNT needs access to your microphone for voice chat.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            }
+          );
+          setHasMicrophonePermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+          if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+            console.log('[VoiceScreen] Microphone permission granted');
+          } else {
+            console.log('[VoiceScreen] Microphone permission denied');
+          }
+        } else {
+          // iOS permissions are handled by react-native-webrtc automatically
+          setHasMicrophonePermission(true);
+        }
+      } catch (err) {
+        console.error('[VoiceScreen] Error requesting microphone permission:', err);
+        setHasMicrophonePermission(false);
+      }
+    };
+
+    requestMicrophonePermission();
+  }, []);
 
   // Check game rules for PLAYER_VOICE_CHAT
   const loadGameRules = useCallback(async () => {
@@ -81,11 +117,35 @@ export default function VoiceScreen() {
     };
   }, [hostname]);
 
-  const handleJoinChannel = () => {
+  const handleJoinChannel = async () => {
     if (!isConnected) {
       Alert.alert('Error', 'Not connected to voice server');
       return;
     }
+    
+    // Check microphone permission
+    if (hasMicrophonePermission === false) {
+      Alert.alert(
+        'Mikrofon-Berechtigung',
+        'To participate in voice chat, you need microphone access. Please allow access in settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Request Again', onPress: async () => {
+            if (Platform.OS === 'android') {
+              const granted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+              );
+              setHasMicrophonePermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+              if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+                voiceService.joinVoiceChannel(selectedChannel);
+              }
+            }
+          }},
+        ]
+      );
+      return;
+    }
+    
     voiceService.joinVoiceChannel(selectedChannel);
   };
 
@@ -137,6 +197,29 @@ export default function VoiceScreen() {
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
+      {/* Microphone permission warning */}
+      {hasMicrophonePermission === false && (
+        <View style={styles.permissionWarning}>
+          <Text style={styles.permissionIcon}>🎤</Text>
+          <Text style={styles.permissionText}>
+            Microphone permission not granted. Voice chat is not possible without microphone.
+          </Text>
+          <TouchableOpacity 
+            style={styles.permissionButton}
+            onPress={async () => {
+              if (Platform.OS === 'android') {
+                const granted = await PermissionsAndroid.request(
+                  PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+                );
+                setHasMicrophonePermission(granted === PermissionsAndroid.RESULTS.GRANTED);
+              }
+            }}
+          >
+            <Text style={styles.permissionButtonText}>Request Permission</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -270,6 +353,35 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#FCA5A5',
+    fontSize: 14,
+  },
+  permissionWarning: {
+    backgroundColor: '#78350F',
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  permissionIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  permissionText: {
+    color: '#FDE68A',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  permissionButton: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  permissionButtonText: {
+    color: '#111827',
+    fontWeight: '600',
     fontSize: 14,
   },
   content: {

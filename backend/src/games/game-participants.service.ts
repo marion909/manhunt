@@ -296,4 +296,24 @@ export class GameParticipantsService {
 
     return this.participantsRepository.save(participant);
   }
+
+  async getParticipantCaptureInfo(
+    gameId: string,
+    participantId: string,
+  ): Promise<{ captureSecret: string; isCatchFreeActive: boolean }> {
+    const participant = await this.participantsRepository.findOne({
+      where: { id: participantId, gameId },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    // Check if catch-free is active (would need RulesService but we check via participantRuleStates)
+    // For now, just return the capture secret; the frontend will also check catch-free status separately
+    return {
+      captureSecret: participant.captureSecret,
+      isCatchFreeActive: false, // Will be checked via separate API call
+    };
+  }
 }

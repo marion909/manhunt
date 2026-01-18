@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,6 +15,7 @@ import { Position } from '../tracking/entities/position.entity';
 import { EventsService } from '../events/events.service';
 import { EventType, EventSeverity, Role, ParticipantStatus } from '../common/enums';
 import { CaptureCodeService } from './capture-code.service';
+import { RulesService } from '../rules/rules.service';
 
 export interface InitiateCaptureDto {
   playerId: string;
@@ -24,6 +27,11 @@ export interface ScanCaptureDto {
   code: string;
   hunterPosition?: { lat: number; lng: number };
   photoUrl?: string;
+}
+
+export interface UploadHandcuffDto {
+  handcuffPhotoUrl: string;
+  capturePhotoUrl?: string;
 }
 
 export interface ResolveCaptureDto {
@@ -43,6 +51,8 @@ export class CapturesService {
     private positionsRepository: Repository<Position>,
     private eventsService: EventsService,
     private captureCodeService: CaptureCodeService,
+    @Inject(forwardRef(() => RulesService))
+    private rulesService: RulesService,
   ) {}
 
   /**
@@ -73,6 +83,12 @@ export class CapturesService {
     });
     if (!playerParticipant) {
       throw new NotFoundException('Player not found in this game');
+    }
+
+    // Check if player has active Catch-Free bonus (Rulebook: 3h capture immunity)
+    const hasCatchFree = await this.rulesService.hasActiveCatchFree(playerParticipant.id);
+    if (hasCatchFree) {
+      throw new ForbiddenException('Player has active Catch-Free protection (cannot be captured)');
     }
 
     // Get latest positions for both hunter and player
@@ -249,7 +265,7 @@ export class CapturesService {
     gameId: string,
     hunterId: string,
     dto: ScanCaptureDto,
-  ): Promise<Capture> {
+  ): Promise<Capture & { playerInfo: { displayName: string; participantNumber: number | null } }> {
     // Validate game exists and is active
     const game = await this.gamesRepository.findOne({ where: { id: gameId } });
     if (!game) {
@@ -257,9 +273,16 @@ export class CapturesService {
     }
 
     // Validate hunter is a HUNTER in this game
-    const hunterParticipant = await this.participantsRepository.findOne({
-      where: { gameId, userId: hunterId, role: Role.HUNTER },
+    // hunterId can be either participantId or userId, check both
+    let hunterParticipant = await this.participantsRepository.findOne({
+      where: { id: hunterId, gameId, role: Role.HUNTER },
     });
+    if (!hunterParticipant) {
+      // Fall back to userId lookup
+      hunterParticipant = await this.participantsRepository.findOne({
+        where: { gameId, userId: hunterId, role: Role.HUNTER },
+      });
+    }
     if (!hunterParticipant) {
       throw new ForbiddenException('Only hunters can capture');
     }
@@ -283,26 +306,32 @@ export class CapturesService {
       throw new BadRequestException('Player is already captured');
     }
 
-    // Verify TOTP code
+    // Check if player has active Catch-Free bonus (Rulebook: 3h capture immunity)
+    const hasCatchFree = await this.rulesService.hasActiveCatchFree(playerParticipant.id);
+    if (hasCatchFree) {
+      throw new ForbiddenException('Player has active Catch-Free protection (cannot be captured)');
+    }
+
+    // Verify capture code - the QR code contains the captureSecret directly
+    // We verify it matches the player's stored secret (static code, not TOTP)
     if (!playerParticipant.captureSecret) {
       throw new BadRequestException('Player has no capture code');
     }
 
-    const isValidCode = this.captureCodeService.verifyCode(
-      dto.code,
-      playerParticipant.captureSecret,
-    );
-
-    if (!isValidCode) {
-      throw new BadRequestException('Invalid or expired capture code');
+    // Direct secret comparison (QR contains the full secret)
+    if (dto.code !== playerParticipant.captureSecret) {
+      throw new BadRequestException('Invalid capture code');
     }
 
-    // Get hunter position (optional)
-    let captureLocation = 'POINT(0 0)';
+    // Get hunter position (optional) - use GeoJSON format for geography column
+    let captureLocation = { type: 'Point', coordinates: [0, 0] };
     let distanceMeters = 0;
 
     if (dto.hunterPosition) {
-      captureLocation = `POINT(${dto.hunterPosition.lng} ${dto.hunterPosition.lat})`;
+      captureLocation = { 
+        type: 'Point', 
+        coordinates: [dto.hunterPosition.lng, dto.hunterPosition.lat] 
+      };
       
       // Calculate distance if player position is available
       const playerPosition = await this.positionsRepository.findOne({
@@ -327,41 +356,138 @@ export class CapturesService {
       }
     }
 
-    // Create capture record with CONFIRMED status (auto-confirmed via QR)
+    // Create capture record with PENDING_HANDCUFF status (Rulebook: requires handcuff photo)
     const capture = this.capturesRepository.create({
       gameId,
-      hunterId,
-      playerId: playerParticipant.userId,
-      captureLocation,
+      hunterId: hunterParticipant.userId || null, // Can be null if no user account linked
+      playerId: playerParticipant.userId || null, // Can be null if no user account linked
+      hunterParticipantId: hunterParticipant.id, // Always set - references game_participants
+      playerParticipantId: playerParticipant.id, // Always set - references game_participants
+      captureLocation: captureLocation as any,
       distanceMeters,
-      status: CaptureStatus.CONFIRMED,
+      status: CaptureStatus.PENDING_HANDCUFF,
       photoUrl: dto.photoUrl,
-      confirmedBy: hunterId, // Hunter is also the confirmer for QR captures
+      handcuffApplied: false,
       initiatedAt: new Date(),
-      resolvedAt: new Date(),
     });
 
     const savedCapture = await this.capturesRepository.save(capture);
 
-    // Update player status to CAPTURED
-    playerParticipant.status = ParticipantStatus.CAPTURED;
-    await this.participantsRepository.save(playerParticipant);
-
-    // Log event
+    // Log event (use userId if available, otherwise null - events.user_id is now nullable)
     await this.eventsService.logEvent({
       gameId,
-      userId: hunterId,
-      type: EventType.CAPTURE_CONFIRMED,
+      userId: hunterParticipant.userId || null,
+      type: EventType.CAPTURE_ATTEMPT,
       severity: EventSeverity.INFO,
-      message: `Player captured via QR code`,
+      message: `QR code scanned, awaiting handcuff photo`,
       metadata: {
         captureId: savedCapture.id,
+        hunterParticipantId: hunterParticipant.id,
+        playerParticipantId: playerParticipant.id,
         playerId: playerParticipant.userId,
         method: 'QR_CODE',
         distance: distanceMeters,
       },
     });
 
-    return savedCapture;
+    // Return capture with player info for frontend display
+    return {
+      ...savedCapture,
+      playerInfo: {
+        displayName: playerParticipant.displayName,
+        participantNumber: playerParticipant.participantNumber,
+      },
+    };
+  }
+
+  /**
+   * Complete capture with handcuff photo (Rulebook: two-step capture flow)
+   * QR scan -> PENDING_HANDCUFF -> Handcuff photo upload -> CONFIRMED
+   */
+  async confirmWithHandcuff(
+    captureId: string,
+    hunterId: string,
+    dto: UploadHandcuffDto,
+  ): Promise<Capture> {
+    const capture = await this.capturesRepository.findOne({
+      where: { id: captureId },
+      relations: ['game'],
+    });
+
+    if (!capture) {
+      throw new NotFoundException('Capture not found');
+    }
+
+    // Verify it's the same hunter who initiated (check participantId since userId may be null)
+    if (capture.hunterParticipantId !== hunterId && capture.hunterId !== hunterId) {
+      throw new ForbiddenException('Only the initiating hunter can confirm this capture');
+    }
+
+    // Verify capture is in PENDING_HANDCUFF status
+    if (capture.status !== CaptureStatus.PENDING_HANDCUFF) {
+      throw new BadRequestException(
+        `Cannot confirm capture with status ${capture.status}. Expected PENDING_HANDCUFF.`,
+      );
+    }
+
+    // Lookup hunter participant first to get userId for confirmedBy
+    const hunterParticipant = await this.participantsRepository.findOne({
+      where: { id: capture.hunterParticipantId },
+    });
+
+    // Update capture with handcuff photo
+    capture.handcuffApplied = true;
+    capture.handcuffPhotoUrl = dto.handcuffPhotoUrl;
+    if (dto.capturePhotoUrl) {
+      capture.capturePhotoUrl = dto.capturePhotoUrl;
+    }
+    capture.status = CaptureStatus.CONFIRMED;
+    // confirmedBy is a FK to users table, so use userId (null if no user account)
+    capture.confirmedBy = hunterParticipant?.userId || null;
+    capture.resolvedAt = new Date();
+
+    const updatedCapture = await this.capturesRepository.save(capture);
+
+    // Update player status to CAPTURED (use participantId since userId may be null)
+    const playerParticipant = await this.participantsRepository.findOne({
+      where: { gameId: capture.gameId, id: capture.playerParticipantId, role: Role.PLAYER },
+    });
+
+    if (playerParticipant) {
+      playerParticipant.status = ParticipantStatus.CAPTURED;
+      await this.participantsRepository.save(playerParticipant);
+    }
+
+    await this.eventsService.logEvent({
+      gameId: capture.gameId,
+      userId: hunterParticipant?.userId || null,
+      type: EventType.CAPTURE_CONFIRMED,
+      severity: EventSeverity.INFO,
+      message: `Capture confirmed with handcuff photo`,
+      metadata: {
+        captureId: capture.id,
+        hunterParticipantId: capture.hunterParticipantId,
+        playerParticipantId: capture.playerParticipantId,
+        playerId: capture.playerId,
+        handcuffPhotoUrl: dto.handcuffPhotoUrl,
+      },
+    });
+
+    return updatedCapture;
+  }
+
+  /**
+   * Get captures pending handcuff photo for a hunter
+   */
+  async getPendingHandcuffCaptures(gameId: string, hunterId: string): Promise<Capture[]> {
+    return this.capturesRepository.find({
+      where: {
+        gameId,
+        hunterId,
+        status: CaptureStatus.PENDING_HANDCUFF,
+      },
+      relations: ['player'],
+      order: { initiatedAt: 'DESC' },
+    });
   }
 }

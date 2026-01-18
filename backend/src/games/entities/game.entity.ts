@@ -60,6 +60,15 @@ export class Game {
   @Column({ name: 'night_end_hour', type: 'int', default: 6 })
   nightEndHour: number;
 
+  @Column({ name: 'boundary_violation_limit_seconds', type: 'int', default: 900 })
+  boundaryViolationLimitSeconds: number; // Rulebook: default 15 minutes
+
+  @Column({ name: 'proximity_danger_meters', type: 'int', default: 200 })
+  proximityDangerMeters: number; // Danger zone for proximity alerts
+
+  @Column({ name: 'proximity_warning_meters', type: 'int', default: 500 })
+  proximityWarningMeters: number; // Warning zone for proximity alerts
+
   @Column({ name: 'center_point', type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
   centerPoint: any;
 

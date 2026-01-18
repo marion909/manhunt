@@ -192,7 +192,7 @@ export default function ChatScreen() {
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
   const renderMessage = ({ item: message }: { item: ChatMessage }) => {
@@ -214,7 +214,7 @@ export default function ChatScreen() {
         <View style={styles.messageHeader}>
           <Text style={styles.senderName}>{message.senderDisplayName || 'Unknown'}</Text>
           {showRecipientInfo && (
-            <Text style={styles.recipientArrowText}> → {message.recipientDisplayName || 'Spieler'}</Text>
+            <Text style={styles.recipientArrowText}> → {message.recipientDisplayName || 'Player'}</Text>
           )}
           {message.senderRole && (
             <View style={[styles.roleBadge, { backgroundColor: getRoleColor(message.senderRole) }]}>
@@ -258,14 +258,14 @@ export default function ChatScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Nachricht an Spieler</Text>
+              <Text style={styles.modalTitle}>Message to Player</Text>
               <TouchableOpacity onPress={() => setShowPlayerPicker(false)}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.playerList}>
               {players.length === 0 ? (
-                <Text style={styles.noPlayersText}>Keine anderen Spieler im Spiel</Text>
+                <Text style={styles.noPlayersText}>No other players in game</Text>
               ) : (
                 players.map((player) => (
                   <TouchableOpacity
@@ -280,7 +280,7 @@ export default function ChatScreen() {
                     </View>
                     <View style={styles.playerInfo}>
                       <Text style={styles.playerName}>{player.displayName}</Text>
-                      <Text style={styles.playerNumber}>Spieler #{player.participantNumber}</Text>
+                      <Text style={styles.playerNumber}>Player #{player.participantNumber}</Text>
                     </View>
                     <Text style={styles.playerArrow}>→</Text>
                   </TouchableOpacity>
@@ -323,10 +323,10 @@ export default function ChatScreen() {
       {/* Selected Recipient Bar for DIRECT messages */}
       {activeChannel === ChatChannel.DIRECT && selectedRecipient && (
         <View style={styles.recipientBar}>
-          <Text style={styles.recipientLabel}>Nachricht an:</Text>
+          <Text style={styles.recipientLabel}>Message to:</Text>
           <Text style={styles.recipientName}>{selectedRecipient.displayName}</Text>
           <TouchableOpacity onPress={() => setShowPlayerPicker(true)}>
-            <Text style={styles.changeRecipient}>Ändern</Text>
+            <Text style={styles.changeRecipient}>Change</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -336,8 +336,8 @@ export default function ChatScreen() {
         <View style={[styles.messageLimitBar, remainingMessages === 0 && styles.messageLimitReached]}>
           <Text style={styles.messageLimitText}>
             {remainingMessages > 0 
-              ? `📝 ${remainingMessages} Nachricht${remainingMessages !== 1 ? 'en' : ''} verbleibend`
-              : '🚫 Nachrichtenlimit erreicht'}
+              ? `📝 ${remainingMessages} message${remainingMessages !== 1 ? 's' : ''} remaining`
+              : '🚫 Message limit reached'}
           </Text>
         </View>
       )}
@@ -364,7 +364,7 @@ export default function ChatScreen() {
           style={styles.input}
           placeholder={
             activeChannel === ChatChannel.DIRECT && !canSendDirectMessage()
-              ? 'Nachrichtenlimit erreicht'
+              ? 'Message limit reached'
               : `Message ${CHANNEL_CONFIG[activeChannel].label}...`
           }
           placeholderTextColor="#9CA3AF"

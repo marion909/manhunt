@@ -190,4 +190,24 @@ export class GamesController {
   validateHunterToken(@Param('id') id: string, @Param('token') token: string) {
     return this.gamesService.validateHunterToken(id, token);
   }
+
+  @Get(':id/participants/:participantId')
+  @ApiOperation({ summary: 'Get participant status' })
+  @ApiResponse({ status: 200, description: 'Participant info retrieved' })
+  async getParticipantStatus(
+    @Param('id') id: string,
+    @Param('participantId') participantId: string,
+  ) {
+    return this.gamesService.getParticipantById(participantId);
+  }
+
+  @Get(':id/participants/:participantId/capture-info')
+  @ApiOperation({ summary: 'Get participant capture info (QR code data)' })
+  @ApiResponse({ status: 200, description: 'Capture info retrieved' })
+  async getParticipantCaptureInfo(
+    @Param('id') id: string,
+    @Param('participantId') participantId: string,
+  ) {
+    return this.participantsService.getParticipantCaptureInfo(id, participantId);
+  }
 }

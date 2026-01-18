@@ -47,6 +47,14 @@ class LocationService {
           timeInterval: 1000, // Update every second
         },
         (position) => {
+          // Ignore inaccurate positions (> 100m accuracy)
+          // This prevents false "outside boundary" detections on app start
+          const accuracy = position.coords.accuracy || 999;
+          if (accuracy > 100) {
+            console.log(`[LocationService] Ignoring inaccurate position: ${accuracy}m`);
+            return;
+          }
+
           const locationData: LocationData = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,

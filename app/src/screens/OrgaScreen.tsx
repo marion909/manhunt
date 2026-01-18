@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useGameStore } from '../store/game.store';
 import NetworkStatus from '../components/NetworkStatus';
 import BatteryIndicator from '../components/BatteryIndicator';
+import SpeedhuntStatusPanel from '../components/SpeedhuntStatusPanel';
 
 export default function OrgaScreen() {
   const { participantId, gameId } = useAuthStore();
@@ -31,6 +32,13 @@ export default function OrgaScreen() {
           <Text style={styles.statLabel}>Events</Text>
         </View>
       </View>
+
+      {/* Speedhunt Status - visible to all */}
+      {gameId && (
+        <View style={styles.speedhuntSection}>
+          <SpeedhuntStatusPanel gameId={gameId} />
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Event Log</Text>
@@ -180,5 +188,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888',
     marginTop: 5,
+  },
+  speedhuntSection: {
+    paddingHorizontal: 20,
   },
 });

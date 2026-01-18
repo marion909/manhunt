@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GamesModule } from './games/games.module';
@@ -15,6 +17,7 @@ import { RulesModule } from './rules/rules.module';
 import { CapturesModule } from './captures/captures.module';
 import { ChatModule } from './chat/chat.module';
 import { VoiceModule } from './voice/voice.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { User } from './users/entities/user.entity';
 import { Game } from './games/entities/game.entity';
 import { GameParticipant } from './games/entities/game-participant.entity';
@@ -24,6 +27,8 @@ import { Ping } from './tracking/entities/ping.entity';
 import { Event } from './events/entities/event.entity';
 import { Invitation } from './invitations/entities/invitation.entity';
 import { GameRule } from './rules/entities/game-rule.entity';
+import { ParticipantRuleState } from './rules/entities/participant-rule-state.entity';
+import { SpeedhuntSession } from './rules/entities/speedhunt-session.entity';
 import { Capture } from './captures/entities/capture.entity';
 import { ChatMessage } from './chat/entities/chat-message.entity';
 import { HunterAccess } from './games/entities/hunter-access.entity';
@@ -56,6 +61,8 @@ import { HunterAccess } from './games/entities/hunter-access.entity';
           Event,
           Invitation,
           GameRule,
+          ParticipantRuleState,
+          SpeedhuntSession,
           Capture,
           ChatMessage,
           HunterAccess,
@@ -89,6 +96,12 @@ import { HunterAccess } from './games/entities/hunter-access.entity';
     // Scheduling
     ScheduleModule.forRoot(),
 
+    // Static file serving for uploads
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
+
     // Feature modules
     GeospatialModule,
     AuthModule,
@@ -101,6 +114,7 @@ import { HunterAccess } from './games/entities/hunter-access.entity';
     CapturesModule,
     ChatModule,
     VoiceModule,
+    UploadsModule,
   ],
   controllers: [],
   providers: [],

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, Button } from 'react-native';
 import { CameraView, useCameraPermissions, BarCodeScanner } from 'expo-camera';
 import { useAuthStore } from '../store/auth.store';
+import { apiService } from '../services/api.service';
 import { QRData } from '../types';
 
 interface QRScanScreenProps {
@@ -75,7 +76,20 @@ export default function QRScanScreen({ onScanComplete }: QRScanScreenProps) {
         throw new Error('Missing required QR data fields');
       }
 
-      // Save to auth store
+      // Login to get JWT token
+      console.log('Logging in to get JWT token...');
+      const loginResult = await apiService.loginParticipant(
+        parsedData.hostname,
+        parsedData.gameId,
+        parsedData.participantId
+      );
+
+      if (!loginResult.success || !loginResult.token) {
+        throw new Error(loginResult.error || 'Failed to authenticate with server');
+      }
+      console.log('Got JWT token successfully');
+
+      // Save to auth store with token
       console.log('About to call setAuth with:', parsedData);
       await setAuth({
         hostname: parsedData.hostname,
@@ -83,6 +97,7 @@ export default function QRScanScreen({ onScanComplete }: QRScanScreenProps) {
         name: parsedData.name,
         role: parsedData.role,
         gameId: parsedData.gameId,
+        token: loginResult.token,
       });
       console.log('setAuth completed');
 

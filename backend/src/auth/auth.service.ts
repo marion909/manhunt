@@ -1,9 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../users/entities/user.entity';
+import { GameParticipant } from '../games/entities/game-participant.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -12,6 +13,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(GameParticipant)
+    private participantsRepository: Repository<GameParticipant>,
     private jwtService: JwtService,
   ) {}
 
@@ -113,5 +116,43 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  /**
+   * Authenticate a mobile app participant using gameId and participantId
+   * This is used when scanning a QR code to join a game
+   */
+  async loginParticipant(gameId: string, participantId: string) {
+    // Find the participant
+    const participant = await this.participantsRepository.findOne({
+      where: { id: participantId, gameId },
+      relations: ['user'],
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Participant not found in this game');
+    }
+
+    // Generate JWT with participant info
+    const payload = {
+      userId: participant.userId || participantId,
+      role: participant.role,
+      participantId: participant.id,
+      gameId: participant.gameId,
+    };
+
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
+
+    return {
+      accessToken,
+      refreshToken,
+      participant: {
+        id: participant.id,
+        displayName: participant.displayName,
+        role: participant.role,
+        gameId: participant.gameId,
+      },
+    };
   }
 }

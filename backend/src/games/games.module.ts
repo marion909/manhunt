@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamesService } from './games.service';
 import { GamesController } from './games.controller';
@@ -10,11 +10,13 @@ import { GameBoundary } from './entities/game-boundary.entity';
 import { HunterAccess } from './entities/hunter-access.entity';
 import { CaptureCodeService } from '../captures/capture-code.service';
 import { EventsModule } from '../events/events.module';
+import { TrackingModule } from '../tracking/tracking.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Game, GameParticipant, GameBoundary, HunterAccess]),
     EventsModule,
+    forwardRef(() => TrackingModule),
   ],
   controllers: [GamesController, GameParticipantsController],
   providers: [GamesService, GameParticipantsService, CaptureCodeService],

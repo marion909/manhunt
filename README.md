@@ -80,8 +80,9 @@ manhunt/
 │   │   ├── tracking/       # GPS Tracking & Ping System
 │   │   ├── events/         # Event/Audit System
 │   │   ├── invitations/    # Token-based Invitations
-│   │   ├── rules/          # Game Rules Engine
+│   │   ├── rules/          # Game Rules Engine (9 Rule Types)
 │   │   ├── captures/       # Hunter-Player Captures
+│   │   ├── chat/           # Chat System (Text/Voice Channels)
 │   │   └── geospatial/     # PostGIS Integration
 │   └── Dockerfile
 ├── frontend/         # Next.js Web Frontend
@@ -146,16 +147,39 @@ manhunt/
 - ✅ Geofencing-Validierung
 - ✅ Event-Logging
 
+#### Regelwerk & Game Mechanics
+- ✅ Game Rules Engine (9 Regeltypen: Boundary, Speed, Capture Radius, etc.)
+- ✅ Joker-System (Catch-Free, Fake-Ping, Hotel-Bonus, etc.)
+- ✅ Silenthunt (Automatische Pings zu vollen Stunden, zonenbasiert)
+- ✅ Speedhunt (Hunter-ausgelöste Ping-Bursts auf bestimmte Player)
+- ✅ Regeneration (Player-Schutz - blockiert Pings für Dauer)
+- ✅ Hunter-Anfragen (Player kann Hunter-Positionen einmalig anfragen)
+- ✅ Participant Rule States (Tracking von aktiven Regeln pro Spieler)
+
+#### Chat-System
+- ✅ Text-Chat mit Channels (GLOBAL, HUNTER, PLAYER, ORGA)
+- ✅ Voice-Chat Toggle
+- ✅ Chat-Archivierung & Event-Log-Integration
+- ✅ Chat-Regeln konfigurierbar (Player/Hunter Text/Voice Chat)
+
+#### Advanced Features
+- ✅ Ping-Scheduler mit Bull Queue (automatische Pings)
+- ✅ Capture-System mit Handcuff-Bestätigung
+- ✅ Anti-Cheat-System (Geschwindigkeits- & Grenzüberwachung)
+- ✅ Event-Timeline mit Schweregrad-Filtern
+- ✅ Participant Rule State Management
+- ✅ Speedhunt Sessions mit Countdowns
+
 ### 🔄 In Entwicklung
-- 🔄 Regelwerk-Engine (aktiv/deaktivierbar)
-- 🔄 Automatische Ping-Scheduler
-- 🔄 Capture-Bestätigung mit QR-Code
+- 🔄 Challenge-System (Location-based Tasks mit Photo-Proof)
+- 🔄 Template-System für wiederverwendbare Challenges
 
 ### ⏳ Geplant
-- ⏳ Push-Benachrichtigungen
+- ⏳ Push-Benachrichtigungen für Mobile
 - ⏳ Offline-Karten-Support
 - ⏳ Spiel-Export/Replay
-- ⏳ Statistik-Dashboard
+- ⏳ Erweiterte Statistik-Dashboard
+- ⏳ Multi-Language Support (EN/DE)
 
 ## 🛠️ Entwicklung
 
@@ -220,10 +244,13 @@ docker-compose down -v
 - `games`: Spiel-Sessions mit Konfiguration
 - `game_participants`: Teilnehmer mit Rollen (auch ohne User-Account)
 - `game_boundaries`: Polygone für Spielbereiche
-- `game_rules`: Konfigurierbare Spielregeln
+- `game_rules`: Konfigurierbare Spielregeln (9 Typen)
+- `participant_rule_states`: Aktive Regeln pro Teilnehmer
+- `speedhunt_sessions`: Hunter-ausgelöste Speedhunt-Sessions
 - `positions`: GPS-Tracking (Time-Series)
 - `pings`: Enthüllte Player-Positionen mit Offset
 - `captures`: Hunter-Player Fänge
+- `chat_messages`: Chat-Nachrichten mit Channels
 - `events`: Audit-Log
 - `invitations`: Einladungs-Tokens
 

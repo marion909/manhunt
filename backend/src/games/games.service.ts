@@ -10,6 +10,7 @@ import { CreateGameDto } from './dto/create-game.dto';
 import { UpdateGameDto } from './dto/update-game.dto';
 import { GameStatus, Role } from '../common/enums';
 import { CaptureCodeService } from '../captures/capture-code.service';
+import { TrackingGateway } from '../tracking/tracking.gateway';
 
 @Injectable()
 export class GamesService {
@@ -23,6 +24,8 @@ export class GamesService {
     @InjectRepository(HunterAccess)
     private hunterAccessRepository: Repository<HunterAccess>,
     private captureCodeService: CaptureCodeService,
+    @Inject(forwardRef(() => TrackingGateway))
+    private trackingGateway: TrackingGateway,
   ) {}
 
   async create(createGameDto: CreateGameDto, creatorId: string): Promise<Game> {
@@ -168,6 +171,13 @@ export class GamesService {
     });
   }
 
+  async findGameWithBoundaries(gameId: string): Promise<Game | null> {
+    return this.gamesRepository.findOne({
+      where: { id: gameId },
+      relations: ['boundaries'],
+    });
+  }
+
   async findActiveGames(): Promise<Game[]> {
     return this.gamesRepository.find({
       where: { status: GameStatus.ACTIVE },
@@ -191,6 +201,9 @@ export class GamesService {
     game.status = GameStatus.ACTIVE;
     game.startTime = new Date();
     await this.gamesRepository.save(game);
+
+    // Broadcast status change to all connected clients
+    this.trackingGateway.broadcastGameStatusChange(id, GameStatus.ACTIVE);
 
     // Generate TOTP secrets for all PLAYER participants
     const players = await this.participantsRepository.find({
@@ -222,6 +235,9 @@ export class GamesService {
     game.status = GameStatus.PAUSED;
     await this.gamesRepository.save(game);
 
+    // Broadcast status change to all connected clients
+    this.trackingGateway.broadcastGameStatusChange(id, GameStatus.PAUSED);
+
     return this.findOne(id, userId);
   }
 
@@ -239,6 +255,9 @@ export class GamesService {
 
     game.status = GameStatus.ACTIVE;
     await this.gamesRepository.save(game);
+
+    // Broadcast status change to all connected clients
+    this.trackingGateway.broadcastGameStatusChange(id, GameStatus.ACTIVE);
 
     return this.findOne(id, userId);
   }
@@ -258,6 +277,9 @@ export class GamesService {
     game.status = GameStatus.FINISHED;
     game.endTime = new Date();
     await this.gamesRepository.save(game);
+
+    // Broadcast status change to all connected clients
+    this.trackingGateway.broadcastGameStatusChange(id, GameStatus.FINISHED);
 
     return this.findOne(id, userId);
   }

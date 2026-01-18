@@ -17,6 +17,15 @@ export enum RuleType {
   INACTIVITY = 'INACTIVITY',
   PLAYER_TEXT_CHAT = 'PLAYER_TEXT_CHAT',
   PLAYER_VOICE_CHAT = 'PLAYER_VOICE_CHAT',
+  // New game mechanic rules
+  SILENTHUNT = 'SILENTHUNT', // Periodic pings at full hours, configurable per zone
+  SPEEDHUNT = 'SPEEDHUNT', // Hunter-triggered ping bursts on specific players
+  REGENERATION = 'REGENERATION', // Player protection - blocks pings for duration
+  HUNTER_ANFRAGEN = 'HUNTER_ANFRAGEN', // Player can request hunter positions (one-time)
+  // Rulebook Jokers/Bonuses
+  CATCH_FREE = 'CATCH_FREE', // 3 hours capture immunity (Rulebook: Catch-Free-Bonus)
+  FAKE_PING = 'FAKE_PING', // Player can send false location once (Rulebook: Fake-Ping)
+  HOTEL_BONUS = 'HOTEL_BONUS', // 6 hours ping protection, then auto-ping (Rulebook: Hotel-Bonus)
 }
 
 export enum RuleAction {

@@ -1,8 +1,8 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan } from 'typeorm';
+import { Repository, LessThan, MoreThan, In } from 'typeorm';
 import { Position } from './entities/position.entity';
-import { Ping } from './entities/ping.entity';
+import { Ping, PingSource } from './entities/ping.entity';
 import { PositionUpdateDto } from './dto/position-update.dto';
 import { GeospatialService } from '../geospatial/geospatial.service';
 import { GamesService } from '../games/games.service';
@@ -19,6 +19,7 @@ export class TrackingService {
     @InjectRepository(Ping)
     private pingsRepository: Repository<Ping>,
     private geospatialService: GeospatialService,
+    @Inject(forwardRef(() => GamesService))
     private gamesService: GamesService,
     private eventsService: EventsService,
   ) {}
@@ -56,7 +57,7 @@ export class TrackingService {
   }
 
   async getHunterPositions(gameId: string): Promise<any[]> {
-    // Get all latest positions for the game with participant role info
+    // Get all latest positions for HUNTERS ONLY in the game
     const result = await this.positionsRepository.query(`
       SELECT DISTINCT ON (p."participant_id")
         p.id,
@@ -74,7 +75,7 @@ export class TrackingService {
         gp.participant_number as "participantNumber"
       FROM positions p
       LEFT JOIN game_participants gp ON gp.id = p.participant_id
-      WHERE p.game_id = $1
+      WHERE p.game_id = $1 AND gp.role = 'hunter'
       ORDER BY p.participant_id ASC, p.timestamp DESC
     `, [gameId]);
 
@@ -115,9 +116,12 @@ export class TrackingService {
       participantIds?: string[];
       since?: Date;
       limit?: number;
+      sources?: PingSource[];
+      includeFake?: boolean;
+      roles?: string[];
     },
   ): Promise<Ping[]> {
-    const { participantIds, since, limit = 100 } = options;
+    const { participantIds, since, limit = 100, sources, includeFake = true, roles } = options;
 
     const queryBuilder = this.pingsRepository
       .createQueryBuilder('ping')
@@ -126,6 +130,18 @@ export class TrackingService {
 
     if (participantIds && participantIds.length > 0) {
       queryBuilder.andWhere('ping.participantId IN (:...participantIds)', { participantIds });
+    }
+
+    if (roles && roles.length > 0) {
+      queryBuilder.andWhere('participant.role IN (:...roles)', { roles: roles.map(r => r.toLowerCase()) });
+    }
+
+    if (sources && sources.length > 0) {
+      queryBuilder.andWhere('ping.source IN (:...sources)', { sources });
+    }
+
+    if (!includeFake) {
+      queryBuilder.andWhere('ping.isFake = false');
     }
 
     if (since) {
@@ -141,7 +157,13 @@ export class TrackingService {
     return queryBuilder.getMany();
   }
 
-  async generatePing(gameId: string, participantId: string): Promise<Ping> {
+  async generatePing(
+    gameId: string,
+    participantId: string,
+    radiusMeters: number = 200,
+    revealDelaySeconds: number = 0,
+    source: PingSource = PingSource.PERIODIC,
+  ): Promise<Ping> {
     // Get player's current position
     const position = await this.getLatestPosition(gameId, participantId);
     if (!position) {
@@ -150,21 +172,64 @@ export class TrackingService {
 
     const actualPoint: Point = position.location;
 
-    // Generate fake offset (within 200m radius)
-    const revealedPoint = this.geospatialService.generateRandomPointInRadius(actualPoint, 200);
+    // Use actual location directly (no random offset)
+    const revealedPoint = actualPoint;
 
-    // Delayed reveal (5-30 seconds)
-    const delaySeconds = Math.floor(Math.random() * 25) + 5;
-    const revealTime = new Date(Date.now() + delaySeconds * 1000);
+    // Calculate reveal time (Rulebook: Speedhunt pings are time-delayed)
+    const revealAt = revealDelaySeconds > 0
+      ? new Date(Date.now() + revealDelaySeconds * 1000)
+      : new Date();
 
     const ping = this.pingsRepository.create({
       gameId,
       participantId,
       actualLocation: actualPoint,
       revealedLocation: revealedPoint,
-      radiusMeters: 200,
+      radiusMeters: 0,
       timestamp: new Date(),
-      revealedAt: revealTime,
+      revealedAt: revealAt,
+      source,
+      isFake: false,
+    });
+
+    const savedPing = await this.pingsRepository.save(ping);
+    
+    // Reload with participant relation for proper display name
+    return this.pingsRepository.findOne({
+      where: { id: savedPing.id },
+      relations: ['participant'],
+    });
+  }
+
+  /**
+   * Generate a fake ping at a specified location (Rulebook: Fake-Ping joker)
+   * This is triggered by the player using their one-time Fake-Ping joker
+   */
+  async generateFakePing(
+    gameId: string,
+    participantId: string,
+    fakeLat: number,
+    fakeLng: number,
+  ): Promise<Ping> {
+    const fakePoint: Point = {
+      type: 'Point',
+      coordinates: [fakeLng, fakeLat],
+    };
+
+    const ping = this.pingsRepository.create({
+      gameId,
+      participantId,
+      actualLocation: fakePoint, // Store fake as both actual and revealed
+      revealedLocation: fakePoint,
+      radiusMeters: 0,
+      timestamp: new Date(),
+      revealedAt: new Date(), // Immediate reveal
+      source: PingSource.FAKE_PING,
+      isFake: true,
+      metadata: {
+        isFake: true,
+        source: 'FAKE_PING_JOKER',
+      },
     });
 
     const savedPing = await this.pingsRepository.save(ping);

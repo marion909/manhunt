@@ -189,4 +189,31 @@ export class GameParticipantsController {
     );
     return { message: 'Participant removed successfully' };
   }
+
+  /**
+   * Get single participant by ID
+   * NOTE: This route must be at the end to avoid conflicts with other :participantId routes
+   */
+  @Get(':participantId')
+  async getParticipant(
+    @Param('gameId') gameId: string,
+    @Param('participantId') participantId: string,
+  ) {
+    const participant = await this.participantsService.findParticipantById(
+      participantId,
+    );
+
+    if (!participant || participant.gameId !== gameId) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    // Return basic participant info
+    return {
+      id: participant.id,
+      displayName: participant.displayName,
+      role: participant.role,
+      status: participant.status,
+      participantNumber: participant.participantNumber,
+    };
+  }
 }

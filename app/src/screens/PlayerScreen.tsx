@@ -1,56 +1,67 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, StatusBar } from 'react-native';
 import { useAuthStore } from '../store/auth.store';
 import { useGameStore } from '../store/game.store';
 import { websocketService } from '../services/websocket.service';
+import { apiService } from '../services/api.service';
+import { pingService } from '../services/ping.service';
 import PanicButton from '../components/PanicButton';
 import BatteryIndicator from '../components/BatteryIndicator';
+import SpeedhuntStatusPanel from '../components/SpeedhuntStatusPanel';
+import SilenthuntStatusBar from '../components/SilenthuntStatusBar';
+import QRCodePanel from '../components/QRCodePanel';
+import JokerGrid from '../components/JokerGrid';
 
-// Helper function to format time ago
-const formatTimeAgo = (date: Date): string => {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-
-  if (diffSeconds < 60) {
-    return `vor ${diffSeconds} Sekunden`;
-  } else if (diffMinutes < 60) {
-    return `vor ${diffMinutes} Minute${diffMinutes !== 1 ? 'n' : ''}`;
-  } else {
-    return `vor ${diffHours} Stunde${diffHours !== 1 ? 'n' : ''}`;
-  }
-};
+interface GameInfo {
+  id: string;
+  name: string;
+  status: string;
+  startTime?: string;
+}
 
 export default function PlayerScreen() {
-  const { participantId, gameId } = useAuthStore();
+  const { gameId } = useAuthStore();
   const isConnected = useGameStore((state) => state.isConnected);
-  const playerPings = useGameStore((state) => state.playerPings);
-  const [timeAgo, setTimeAgo] = useState<string | null>(null);
+  const setGame = useGameStore((state) => state.setGame);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
 
-  // Get the latest ping for this participant
-  const lastPing = playerPings.find(ping => 
-    ping.participantId === participantId || ping.userId === participantId
-  );
+  // Fetch game info (including status)
+  const fetchGameInfo = useCallback(async () => {
+    if (!gameId) return;
+    try {
+      const info = await apiService.getGameInfo(gameId);
+      if (info) {
+        setGameInfo(info);
+        // Update global store so TabNavigator can access status
+        setGame(info as any);
+      }
+    } catch (err) {
+      console.error('[PlayerScreen] Failed to fetch game info:', err);
+    }
+  }, [gameId, setGame]);
 
-  // Update time ago every second
+  // Initial fetch and periodic refresh
   useEffect(() => {
-    if (!lastPing) {
-      setTimeAgo(null);
-      return;
+    fetchGameInfo();
+    const refreshInterval = setInterval(fetchGameInfo, 5000); // Check every 5 seconds
+    return () => clearInterval(refreshInterval);
+  }, [fetchGameInfo]);
+
+  // Start/stop ping service based on game status
+  useEffect(() => {
+    if (gameInfo?.status?.toUpperCase() === 'ACTIVE') {
+      console.log('[PlayerScreen] Game is ACTIVE, starting ping service');
+      pingService.start();
+    } else {
+      console.log('[PlayerScreen] Game is not ACTIVE, stopping ping service');
+      pingService.stop();
     }
 
-    const updateTimeAgo = () => {
-      const pingDate = new Date(lastPing.timestamp || lastPing.createdAt);
-      setTimeAgo(formatTimeAgo(pingDate));
+    return () => {
+      pingService.stop();
     };
-
-    updateTimeAgo();
-    const interval = setInterval(updateTimeAgo, 10000); // Update every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [lastPing]);
+  }, [gameInfo?.status]);
 
   const handlePanic = () => {
     Alert.alert(
@@ -69,42 +80,41 @@ export default function PlayerScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar hidden />
+
       <View style={styles.header}>
         <Text style={styles.title}>PLAYER MODE</Text>
-        <BatteryIndicator />
+        <View style={styles.headerRight}>
+          <View style={[styles.connectionDot, isConnected ? styles.dotConnected : styles.dotDisconnected]} />
+          <BatteryIndicator />
+        </View>
       </View>
 
-      <View style={styles.content}>
-        <Text style={styles.info}>
-          GPS is always active
-        </Text>
-        <Text style={styles.info}>
-          Position sent only on Orga request
-        </Text>
-        <Text style={styles.status}>
-          {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-        </Text>
-        {lastPing ? (
-          <Text style={styles.lastPing}>
-            ✅ Letzter Ping {timeAgo}
-          </Text>
-        ) : (
-          <Text style={styles.waiting}>⏳ Waiting for ping request...</Text>
+      {/* Silenthunt Status Bar - shows next ping time */}
+      {gameId && <SilenthuntStatusBar gameId={gameId} />}
+
+      <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContainer}>
+        {/* QR Code for Capture */}
+        {gameId && (
+          <View style={styles.qrSection}>
+            <QRCodePanel gameId={gameId} />
+          </View>
         )}
-        <Text style={styles.participantId}>ID: {participantId}</Text>
-        {gameId && <Text style={styles.gameId}>Game: {gameId}</Text>}
-      </View>
 
-      <View style={styles.infoBox}>
-        <Text style={styles.infoTitle}>Player Instructions</Text>
-        <Text style={styles.infoText}>
-          • Your position is tracked continuously{'\n'}
-          • Position is only sent when Orga requests it{'\n'}
-          • You cannot see hunter positions{'\n'}
-          • Use panic button in emergency{'\n'}
-          • Keep device charged at all times
-        </Text>
-      </View>
+        {/* Game Status Panels */}
+        {gameId && (
+          <View style={styles.rulesSection}>
+            <SpeedhuntStatusPanel gameId={gameId} />
+          </View>
+        )}
+
+        {/* Joker Grid */}
+        {gameId && (
+          <View style={styles.jokersSection}>
+            <JokerGrid gameId={gameId} />
+          </View>
+        )}
+      </ScrollView>
 
       <PanicButton onPress={handlePanic} />
     </View>
@@ -117,9 +127,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  connectionDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  dotConnected: {
+    backgroundColor: '#00ff00',
+  },
+  dotDisconnected: {
+    backgroundColor: '#ff0000',
   },
   title: {
     fontSize: 28,
@@ -127,58 +156,30 @@ const styles = StyleSheet.create({
     color: '#00ff00',
     letterSpacing: 2,
   },
-  content: {
-    padding: 20,
+  scrollContent: {
+    flex: 1,
   },
-  info: {
+  scrollContainer: {
+    paddingBottom: 100,
+  },
+  qrSection: {
+    paddingHorizontal: 20,
+    paddingTop: 15,
+  },
+  rulesSection: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 10,
+  },
+  jokersSection: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    color: '#888',
     fontSize: 16,
-    color: '#fff',
-    marginBottom: 10,
-  },
-  status: {
-    fontSize: 18,
-    color: '#0f0',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  waiting: {
-    fontSize: 18,
-    color: '#ff0',
-    marginTop: 10,
-  },
-  lastPing: {
-    fontSize: 18,
-    color: '#00ff00',
-    marginTop: 10,
     fontWeight: 'bold',
-  },
-  participantId: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 20,
-  },
-  gameId: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 5,
-  },
-  infoBox: {
-    margin: 20,
-    padding: 20,
-    backgroundColor: '#111',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#00ff00',
-    marginBottom: 15,
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#aaa',
-    lineHeight: 22,
+    marginBottom: 10,
   },
 });

@@ -48,13 +48,10 @@ export default function BatteryIndicator() {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
     backgroundColor: '#111',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   text: {
     color: '#0f0',

@@ -58,7 +58,7 @@ export class Event {
   @JoinColumn({ name: 'game_id' })
   game: Game;
 
-  @ManyToOne(() => User, (user) => user.events, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.events, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'user_id' })
   user: User;
 }

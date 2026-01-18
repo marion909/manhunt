@@ -153,4 +153,66 @@ export class GeospatialService {
     const speed = this.calculateSpeed(point1, timestamp1, point2, timestamp2);
     return speed > 50; // Flag if faster than 50 km/h
   }
+
+  /**
+   * Check if point is within inner zone of a game
+   */
+  async isPointInInnerZone(point: Point, gameId: string): Promise<boolean> {
+    const result = await this.boundariesRepository
+      .createQueryBuilder('boundary')
+      .where('boundary.gameId = :gameId', { gameId })
+      .andWhere('boundary.type = :type', { type: BoundaryType.INNER_ZONE })
+      .andWhere('boundary.active = true')
+      .andWhere('ST_Contains(boundary.geometry, ST_SetSRID(ST_GeomFromGeoJSON(:point), 4326))', {
+        point: JSON.stringify(point),
+      })
+      .getCount();
+
+    return result > 0;
+  }
+
+  /**
+   * Check if point is in outer zone (in game area but NOT in inner zone)
+   * Returns true if in outer_zone boundary OR (in game_area but not in inner_zone)
+   */
+  async isPointInOuterZone(point: Point, gameId: string): Promise<boolean> {
+    // First check if explicitly in an outer_zone boundary
+    const inExplicitOuter = await this.boundariesRepository
+      .createQueryBuilder('boundary')
+      .where('boundary.gameId = :gameId', { gameId })
+      .andWhere('boundary.type = :type', { type: BoundaryType.OUTER_ZONE })
+      .andWhere('boundary.active = true')
+      .andWhere('ST_Contains(boundary.geometry, ST_SetSRID(ST_GeomFromGeoJSON(:point), 4326))', {
+        point: JSON.stringify(point),
+      })
+      .getCount();
+
+    if (inExplicitOuter > 0) return true;
+
+    // If no explicit outer zone, check if in game area but NOT in inner zone
+    const inGameArea = await this.isPointInGameArea(point, gameId);
+    if (!inGameArea) return false;
+
+    const inInnerZone = await this.isPointInInnerZone(point, gameId);
+    return !inInnerZone;
+  }
+
+  /**
+   * Get the zone type a point is in (INNER_ZONE, OUTER_ZONE, or null if outside game area)
+   */
+  async getPointZone(point: Point, gameId: string): Promise<BoundaryType | null> {
+    // Check inner zone first (more restrictive)
+    const inInnerZone = await this.isPointInInnerZone(point, gameId);
+    if (inInnerZone) return BoundaryType.INNER_ZONE;
+
+    // Check outer zone (fallback if game_area doesn't exist)
+    const inOuterZone = await this.isPointInBoundary(point, gameId, BoundaryType.OUTER_ZONE);
+    if (inOuterZone) return BoundaryType.OUTER_ZONE;
+
+    // Finally check game area if it exists
+    const inGameArea = await this.isPointInGameArea(point, gameId);
+    if (inGameArea) return BoundaryType.OUTER_ZONE; // Treat game_area as outer zone
+
+    return null;
+  }
 }

@@ -48,6 +48,7 @@ export interface Game {
   name: string;
   status: GameStatus;
   huntingArea: any; // GeoJSON Polygon
+  startTime?: string;
   startedAt?: string;
   pausedAt?: string;
   finishedAt?: string;
@@ -89,7 +90,9 @@ export interface AuthState {
   name: string;
   role: Role;
   gameId?: string;
+  token?: string;
   isAuthenticated: boolean;
+  participantStatus?: ParticipantStatus;
 }
 
 export interface LocationData {

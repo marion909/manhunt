@@ -7,13 +7,14 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { TrackingService } from './tracking.service';
 import { GamesService } from '../games/games.service';
 import { PositionUpdateDto } from './dto/position-update.dto';
 import { Role, ParticipantStatus } from '../common/enums';
+import { PingSource } from './entities/ping.entity';
 
 interface AuthSocket extends Socket {
   userId?: string;
@@ -36,6 +37,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   constructor(
     private trackingService: TrackingService,
+    @Inject(forwardRef(() => GamesService))
     private gamesService: GamesService,
     private jwtService: JwtService,
   ) {}
@@ -48,11 +50,52 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
       participantId: ping.participantId,
       userId: ping.participantId, // Alias for backwards compatibility
       playerName: ping.participant?.displayName || 'Unknown',
+      role: ping.participant?.role,
+      source: ping.source,
       actualLocation: ping.actualLocation,
       displayLocation: ping.revealedLocation, // Frontend expects displayLocation
       offsetDistance: ping.radiusMeters,
       createdAt: ping.timestamp?.toISOString?.() || ping.timestamp,
     };
+  }
+
+  /**
+   * Broadcast a ping to all clients in a game room
+   * Called by schedulers (Silenthunt, Speedhunt) after generating pings
+   */
+  broadcastPing(gameId: string, ping: any) {
+    const transformedPing = this.transformPingForFrontend(ping);
+    this.server.to(`game:${gameId}`).emit('ping:generated', transformedPing);
+    this.server.to(`game:${gameId}`).emit('ping:new', transformedPing);
+    console.log(`[Gateway] Broadcasted ping for game ${gameId}:`, transformedPing.playerName);
+  }
+
+  /**
+   * Send proximity alert to a specific player
+   * Called by ProximityDetectionService when a hunter is nearby
+   */
+  sendProximityAlert(
+    gameId: string,
+    participantId: string,
+    alert: { level: 'DANGER' | 'WARNING'; distance: number; message: string },
+  ) {
+    // Send to the specific player's room
+    this.server.to(`participant:${participantId}`).emit('proximity:alert', {
+      gameId,
+      participantId,
+      ...alert,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Also broadcast to game room for orga visibility
+    this.server.to(`game:${gameId}:orga`).emit('proximity:alert', {
+      gameId,
+      participantId,
+      ...alert,
+      timestamp: new Date().toISOString(),
+    });
+    
+    console.log(`[Gateway] Proximity ${alert.level} alert sent to ${participantId}: ${alert.distance}m`);
   }
 
   async handleConnection(client: AuthSocket) {
@@ -216,8 +259,19 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
         position,
       });
     } else if (role === Role.PLAYER) {
-      // Player positions are not broadcast live (only via pings)
-      // Just acknowledge receipt
+      // Player positions are not broadcast live - only via pings
+      // Generate a PERIODIC ping for players (every 10s from app)
+      try {
+        const ping = await this.trackingService.generatePing(gameId, userId, 0, 0, PingSource.PERIODIC);
+        if (ping) {
+          // Broadcast the new ping to all clients (transformed for frontend)
+          this.server.to(`game:${gameId}`).emit('ping:generated', this.transformPingForFrontend(ping));
+        }
+      } catch (error) {
+        console.error('[Gateway] Failed to generate periodic ping:', error.message);
+      }
+      
+      // Acknowledge receipt
       client.emit('position:saved', { timestamp: position.timestamp });
     }
 
@@ -368,6 +422,7 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   // Broadcast game status change to all participants
   broadcastGameStatusChange(gameId: string, status: string) {
+    console.log(`Broadcasting game:status-changed to game:${gameId} with status: ${status}`);
     this.server.to(`game:${gameId}`).emit('game:status-changed', { status });
   }
 

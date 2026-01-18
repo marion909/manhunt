@@ -13,6 +13,7 @@ import { queueService } from './src/services/queue.service';
 // Screens
 import SplashScreen from './src/screens/SplashScreen';
 import QRScanScreen from './src/screens/QRScanScreen';
+import HunterMapScreen from './src/screens/HunterMapScreen';
 
 // Tab Navigators
 import { HunterTabNavigator } from './src/navigation/HunterTabNavigator';
@@ -161,11 +162,41 @@ export default function App() {
               )}
             </Stack.Screen>
           ) : role === 'HUNTER' ? (
-            <Stack.Screen name="Hunter" component={HunterTabNavigator} />
+            <>
+              <Stack.Screen name="Hunter" component={HunterTabNavigator} />
+              <Stack.Screen 
+                name="HunterMap" 
+                component={HunterMapScreen} 
+                options={{ 
+                  presentation: 'modal',
+                  gestureEnabled: true 
+                }} 
+              />
+            </>
           ) : role === 'ORGA' || role === 'OPERATOR' ? (
-            <Stack.Screen name="Orga" component={OrgaTabNavigator} />
+            <>
+              <Stack.Screen name="Orga" component={OrgaTabNavigator} />
+              <Stack.Screen 
+                name="HunterMap" 
+                component={HunterMapScreen} 
+                options={{ 
+                  presentation: 'modal',
+                  gestureEnabled: true 
+                }} 
+              />
+            </>
           ) : (
-            <Stack.Screen name="Player" component={PlayerTabNavigator} />
+            <>
+              <Stack.Screen name="Player" component={PlayerTabNavigator} />
+              <Stack.Screen 
+                name="HunterMap" 
+                component={HunterMapScreen} 
+                options={{ 
+                  presentation: 'modal',
+                  gestureEnabled: true 
+                }} 
+              />
+            </>
           )}
         </Stack.Navigator>
       </NavigationContainer>

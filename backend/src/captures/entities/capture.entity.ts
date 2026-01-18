@@ -13,6 +13,7 @@ import { User } from '../../users/entities/user.entity';
 
 export enum CaptureStatus {
   PENDING = 'PENDING',
+  PENDING_HANDCUFF = 'PENDING_HANDCUFF', // QR scanned, waiting for handcuff photo (Rulebook)
   CONFIRMED = 'CONFIRMED',
   REJECTED = 'REJECTED',
   EXPIRED = 'EXPIRED',
@@ -30,11 +31,18 @@ export class Capture {
   @Column({ name: 'game_id' })
   gameId: string;
 
-  @Column({ name: 'hunter_id' })
+  @Column({ name: 'hunter_id', nullable: true })
   hunterId: string;
 
-  @Column({ name: 'player_id' })
+  @Column({ name: 'player_id', nullable: true })
   playerId: string;
+
+  // Store participant IDs (some participants don't have user accounts)
+  @Column({ name: 'hunter_participant_id', nullable: true })
+  hunterParticipantId: string;
+
+  @Column({ name: 'player_participant_id', nullable: true })
+  playerParticipantId: string;
 
   @Column({
     type: 'geography',
@@ -57,6 +65,16 @@ export class Capture {
   @Column({ name: 'photo_url', nullable: true })
   photoUrl: string;
 
+  // Handcuff documentation (Rulebook: hunter must apply handcuff and take photo)
+  @Column({ name: 'handcuff_applied', default: false })
+  handcuffApplied: boolean;
+
+  @Column({ name: 'handcuff_photo_url', nullable: true })
+  handcuffPhotoUrl: string;
+
+  @Column({ name: 'capture_photo_url', nullable: true })
+  capturePhotoUrl: string; // Photo of the actual capture moment
+
   @Column({ name: 'confirmed_by', nullable: true })
   confirmedBy: string; // User ID of orga who confirmed/rejected
 
@@ -77,11 +95,11 @@ export class Capture {
   @JoinColumn({ name: 'game_id' })
   game: Game;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'hunter_id' })
   hunter: User;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'player_id' })
   player: User;
 

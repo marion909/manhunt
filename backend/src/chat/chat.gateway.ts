@@ -65,6 +65,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const HUNTER_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // DNS namespace
           client.participantId = uuidv5(`hunter-${hunterToken}`, HUNTER_NAMESPACE);
           console.log('[Chat] Hunter token authenticated for game:', hunterGameId);
+          // Emit ready event so client knows auth is complete
+          client.emit('connection:ready', { authenticated: true, isHunter: true });
           return;
         }
       } catch (error) {
@@ -95,6 +97,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         console.log('[Chat] JWT verification failed');
       }
     }
+
+    // Emit ready event for JWT/participantId auth
+    client.emit('connection:ready', { authenticated: true, isHunter: false });
   }
 
   handleDisconnect(client: ChatSocket) {
